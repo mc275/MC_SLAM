@@ -26,13 +26,17 @@ LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 find_package(OpenCV 2.4.3 REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Pangolin REQUIRED)
+find_package(Cholmod REQUIRED)
 
 # include工程目录。
 include_directories(
 ${PROJECT_SOURCE_DIR}
 ${PROJECT_SOURCE_DIR}/include
+${PROJECT_SOURCE_DIR}/src
+${PROJECT_SOURCE_DIR}/src/IMU
 ${EIGEN3_INCLUDE_DIR}
 ${Pangolin_INCLUDE_DIRS}
+${CHOLMOD_INCLUDE_DIR}
 )
 
 # 设置CMake库输出目录。
@@ -59,6 +63,13 @@ src/KeyFrameDatabase.cpp
 src/Sim3Solver.cpp
 src/Initializer.cpp
 src/Viewer.cpp
+
+src/IMU/configparam.cpp
+src/IMU/imudata.cpp
+src/IMU/IMUPreintegrator.cpp
+src/IMU/so3.cpp
+src/IMU/NavState.cpp
+src/IMU/g2otypes.cpp
 )
 
 # 链接库。 
@@ -68,6 +79,10 @@ ${EIGEN3_LIBS}
 ${Pangolin_LIBRARIES}
 ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
+cholmod
+${CHOLMOD_LIBRARIES}
+${BLAS_LIBRARIES}
+${LAPACK_LIBRARIES}
 )
 
 # 编译Vocabulary二进制文件
