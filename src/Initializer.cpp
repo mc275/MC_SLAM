@@ -901,11 +901,12 @@ namespace ORB_SLAM2
             meanY += vKeys[i].pt.y;
         }
 
+        // 特征点中心坐标
         meanX = meanX/N;
         meanY = meanY/N;
 
-		float meanDevX = 0;
-		float meanDevY = 0;
+	float meanDevX = 0;
+	float meanDevY = 0;
         // 将所有vKeys点就减去中心坐标，x坐标和y坐标的均值为0。
         for(int i=0; i<N; i++)
         {
@@ -916,6 +917,7 @@ namespace ORB_SLAM2
             meanDevY += fabs(vNormalizedPoints[i].y);
         }
 
+        // 一阶绝对原点矩,表示vNormalizedPoints的数学期望
         meanDevX = meanDevX/N;
         meanDevY = meanDevY/N;
 

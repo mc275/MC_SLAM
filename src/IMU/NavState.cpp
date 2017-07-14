@@ -94,6 +94,7 @@ namespace ORB_SLAM2
         _V += upd_V;
         
         // Matrix3d R = Get_R().matrix();
+	// 右乘更新
         Sophus::SO3 dR = Sophus::SO3::exp(upd_Phi);
         _R = Get_R()*dR;
         

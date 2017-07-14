@@ -94,9 +94,9 @@ namespace Sophus
 	
 	static Matrix3d hat(const Vector3d &omega);		// 向量=>反对称矩阵
 	
-	static Vector3d vee(const Matrix3d &omega);		// 反对称矩阵=>向量
+	static Vector3d vee(const Matrix3d &Omega);		// 反对称矩阵=>向量
 	
-	static Vector3d lieBracket(const Vector3d &omega1, const Vector3c &omega2);
+	static Vector3d lieBracket(const Vector3d &omega1, const Vector3d &omega2);
 	
 	static Matrix3d d_lieBracketab_by_d_a(const Vector3d &b);
 	

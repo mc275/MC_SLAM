@@ -27,6 +27,7 @@
 namespace Sophus 
 {
 
+    // se3 => SE3指数映射位移的线性变换Jacobian
     // Right Jacobian for Log map in SO(3) - equation (10.86) in
     // G.S. Chirikjian, "Stochastic Models, Information Theory, and Lie Groups", Volume 2, 2008.
     Matrix3d SO3::JacobianR(const Vector3d& w)
