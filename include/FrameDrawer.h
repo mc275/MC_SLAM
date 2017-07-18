@@ -33,6 +33,10 @@ namespace ORB_SLAM2
             cv::Mat DrawFrame();
 
         protected:
+	    
+	    // Vison+IMU
+	    double mStartTime;
+	    double mCurTime;
 
             void DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText);
 

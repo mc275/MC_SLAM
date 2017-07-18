@@ -17,6 +17,15 @@ namespace ORB_SLAM2
     class Map;
     class Frame;
 
+    class cmpKeyFrameId
+    {
+    public:
+	bool operator() (const KeyFrame *a, const KeyFrame *b) const;
+    };
+    
+    typedef std::map<KeyFrame*, size_t, cmpKeyFrameId> mapMapPointObs;
+    
+    
     // 地图点云。
 
     class MapPoint
@@ -28,6 +37,7 @@ namespace ORB_SLAM2
             
             // 
             void SetWorldPos(const cv::Mat &Pos);
+	    void UpdateScale(float scale);
             cv::Mat GetWorldPos();
             
             // 
@@ -35,8 +45,9 @@ namespace ORB_SLAM2
             KeyFrame *GetReferenceKeyFrame();
 
             // 
-            std::map<KeyFrame *,size_t> GetObservations();
-            int Observations();
+            // std::map<KeyFrame *,size_t> GetObservations();
+            mapMapPointObs GetObservations();
+	    int Observations();
 
             // 添加/删除观测，记录KF中可以观测到该地图点云的特征点。
             void AddObservation(KeyFrame *pKF, size_t idx);
@@ -86,8 +97,10 @@ namespace ORB_SLAM2
             float GetMaxDistanceInvariance();
 
             // 预测尺度。
-            int PredictScale(const float &currentDist, const float &logScaleFactor);
-
+            // int PredictScale(const float &currentDist, const float &logScaleFactor);
+	    int PredictScale(const float &currentDist, KeyFrame *pKF);
+	    int PredictScale(const float &currentDist, Frame *pF);
+	    
 
         public:
 
@@ -108,7 +121,7 @@ namespace ORB_SLAM2
             // mbTrackInView==false的点有以下几种：
             // a 已经和当前帧经过匹配(TrackReference, TrackWithMotionModel) 但在优化过程中认为时外点。
             // b 已经和当前帧经过进过匹配，内点，不需要投影。
-            // c 不在当前相机事业中。（未通过isInFrustum判断）。
+            // c 不在当前相机视野中。（未通过isInFrustum判断）。
             bool mbTrackInView;
 
             // TrackLocalMap - UpdateLocalPoints中防止将MapPoint重复添加到mvpLocalMapPoints的标记。
@@ -139,8 +152,8 @@ namespace ORB_SLAM2
 
             cv::Mat mWorldPos;                              // MapPoint在世界坐标系下的绝对坐标。
 
-            std::map<KeyFrame *, size_t> mObservations;       // 观测到该MapPoint的KF和该MapPoint在KF中的索引。
-
+            // std::map<KeyFrame *, size_t> mObservations;       // 观测到该MapPoint的KF和该MapPoint在KF中的索引。
+            mapMapPointObs mObservations;       // 观测到该MapPoint的KF和该MapPoint在KF中的索引。
             cv::Mat mNormalVector;                          // MapPoint的平均观测方向。
             
             // 快速匹配最好的描述子。

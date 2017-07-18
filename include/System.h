@@ -16,6 +16,8 @@
 #include"ORBVocabulary.h"
 #include"Viewer.h"
 
+#include "IMU/imudata.h"
+
 namespace ORB_SLAM2
 {
    
@@ -28,6 +30,10 @@ class LoopClosing;
     
 class System
 {
+public:
+    bool bLocalMapAcceptKF(void);
+    void SaveKeyFrameTrajectoryNavState(const string &filename);
+    
     public:
         // 输入传感器。
         enum eSensor
@@ -53,7 +59,7 @@ class System
         // 处理单目采集图像
         // 输入：RGB图像或灰度图像；时间戳。                       输出：返回相机位姿。
         cv::Mat TrackMonocular( const cv::Mat &im, const double &timestamp );
-
+	cv::Mat TrackMonoVI( const cv::Mat &im, const std::vector<IMUData> &vimu, const double &timestamp);
 
         // 停止局部地图线程，只进行相机跟踪。
         void ActivateLocalizationMode();
@@ -127,6 +133,8 @@ class System
         std::thread *mptLocalMapping;
         std::thread *mptLoopClosing;
         std::thread *mptViewer;
+	
+	std::thread *mptLocalMappingVIOInit;
 
         // 重置标志
         std::mutex mMutexReset;
