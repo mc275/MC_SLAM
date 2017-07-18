@@ -18,6 +18,10 @@
 #include "MapDrawer.h"
 #include "System.h"
 
+#include "IMU/imudata.h"
+#include "IMU/configparam.h"
+
+
 #include <mutex>
 
 
@@ -33,11 +37,41 @@ namespace ORB_SLAM2
 
     class Tracking
     {
+	
+    public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	
+	// Vision+IMU
+	bool mbCreateNewKFAfterReloc;
+	bool mbRelocBiasPrepare;
+	void RecomputeIMUBiasAndCurrentNavstate(NavState &nscur);
+	
+	// 20帧用于计算偏移
+	vector<Frame> mv20FramesReloc;
+	
+	// 通过IMU信息预测当前帧状态
+	void PredictNavStateByIMU(bool bMapUpdated);
+	IMUPreintegrator mIMUPreIntInTrack;
+	
+	// 运动模型估计
+	bool TrackWithIMU(bool bMapUpdated = false);
+	bool TrackLocalMapWithIMU(bool bMapUpdated = false);
+	
+	ConfigParam *mpParams;
+	cv::Mat GrabImageMonoVI(const cv::Mat &im, const std::vector<IMUData> &vimu, const double &timestamp);
+	
+	// 上一帧的IMU数据
+	// 在初始化和新关键帧创建时应该被清空
+	std::vector<IMUData> mvIMUSinceLastKF;
+	IMUPreintegrator GetIMUPreIntSinceLastKF(Frame *pCurF, KeyFrame *pLastKF, const std::vector<IMUData> &vIMUSInceLastKF);
+	IMUPreintegrator GetIMUPreIntSinceLastFrame(Frame *pCurF, Frame *pLastF);
+	
         public:
             // 构造函数。
+//             Tracking(System *pSys, ORBVocabulary *pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Map *pMap, 
+//                     KeyFrameDatabase *pKFDB, const string &strSettingPath, const int sensor);
             Tracking(System *pSys, ORBVocabulary *pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Map *pMap, 
-                    KeyFrameDatabase *pKFDB, const string &strSettingPath, const int sensor);
-            
+                    KeyFrameDatabase *pKFDB, const string &strSettingPath, const int sensor, ConfigParam *pParams);
             
             // 对输入的图像进行预处理，调用Track（）。提取特征并进行立体匹配。
             cv::Mat GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRectRight, const double &timestamp);

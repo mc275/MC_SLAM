@@ -12,6 +12,9 @@
 #include "KeyFrame.h"
 #include "ORBextractor.h"
 
+#include <IMU/imudata.h>
+#include <IMU/NavState.h>
+#include <IMU/IMUPreintegrator.h>
 
 #include <opencv2/opencv.hpp>
 
@@ -29,7 +32,43 @@ namespace ORB_SLAM2
     class Frame
     {
         
-        public:
+    public:
+	// Vison+IMU
+	
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	
+	// 单目VI构造函数
+	Frame(const cv::Mat &imGray, const double &timeStamp, const std::vector<IMUData> &vimu, ORBextractor *extractor, ORBVocabulary *voc, 
+		cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, KeyFrame *pLastKF = NULL);
+	
+	void ComputeIMUPreIntSinceLastFrame(const Frame *pLastF, IMUPreintegrator &imupreint) const;
+	
+	void UpdatePoseFromNS(const cv::Mat &Tbc);
+	
+	void SetInitialNavStateAndBias(const NavState &ns);
+	
+	void UpdateNavState(const IMUPreintegrator &imupreint, const Vector3d &gw);
+	
+	const NavState &GetNavState(void) const;
+	
+	void SetNavState(const NavState &ns);
+	
+	void SetNavStateBiasGyr(const Vector3d &bg);
+	
+	void SetNavStateBiasAcc(const Vector3d &ba);
+	
+	// IMU预积分的结果
+	std::vector<IMUData> mvIMUDataSinceLastFrame;
+	
+	// 位姿先验信息，用于优化
+	Matrix<double,15,15> mMargCovInv;
+	NavState mNavStatePrior;
+	
+    protected:
+	NavState mNavState;
+	
+	
+    public:
             
             // 默认构造函数，无任何实参的，执行默认初始化，函数体外类型=0，函数体内类型不初始化。
             Frame();

@@ -10,6 +10,11 @@
 #include "Frame.h"
 #include "KeyFrameDatabase.h"
 
+#include "IMU/imudata.h"
+#include "IMU/NavState.h"
+#include "IMU/IMUPreintegrator.h"
+
+
 #include <mutex>
 
 
@@ -26,6 +31,63 @@ namespace ORB_SLAM2
 
     class KeyFrame
     {
+	
+    public:
+	
+	// Vison+IMU
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+	
+	// VI 构造函数
+	KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB, std::vector<IMUData> vIMUData, KeyFrame *pLastKF=NULL);
+	
+	KeyFrame *GetPrevKeyFrame(void);
+	KeyFrame *GetNextKeyFrame(void);
+	void SetPrevKeyFrame(KeyFrame *pKF);
+	void SetNextKeyFrame(KeyFrame *pKF);
+	
+	std::vector<IMUData> GetVectorIMUData(void);
+	void AppendIMUDataToFront(KeyFrame *pPrevKF);
+	void ComputePreInt(void);
+	
+	const IMUPreintegrator &GetIMUPreInt(void);
+	
+	void UpdateNavStatePVRFromTcw(const cv::Mat &Tcw, const cv::Mat &Tbc);
+	void UpdatePoseFromNS(const cv::Mat &Tbc);
+	void UpdateNavState(const IMUPreintegrator &imupreint, const Vector3d &gw);
+	
+	// 设置KF的导航状态量
+	void SetNavState(const NavState &ns);
+	const NavState &GetNavState(void);
+	void SetNavStateVel(const Vector3d &vel);
+	void SetNavStatePos(const Vector3d &pos);
+	void SetNavStateRot(const Matrix3d &rot);
+	void SetNavStateRot(const Sophus::SO3 &rot);
+	void SetNavStateBiasGyr(const Vector3d &bg);
+	void SetNavStateBiasAcc(const Vector3d &ba);
+	void SetNavStateDeltaBg(const Vector3d &dbg);
+	void SetNavStateDeltaBa(const Vector3d &dba);
+	
+	void SetInitialNavStateAndBias(const NavState &ns);
+	
+	// 闭环检测变量
+	NavState mNavStateGBA;					// mTcwGBA
+	NavState mNavStateBefGBA;				// mTcwBefGBA
+	
+    protected:
+	
+	std::mutex mMutexPrevKF;
+	std::mutex mMutexNextKF;
+	KeyFrame *mpPrevKeyFrame;
+	KeyFrame *mpNextKeyFrame;
+	
+	std::mutex mMutexNavState;
+	NavState mNavState;
+	
+	// IMU预积分数据
+	std::mutex mMutexIMUData;
+	std::vector<IMUData> mvIMUData;
+	IMUPreintegrator mIMUPreInt;
+	
         public:
 
             // 构造函数。

@@ -13,9 +13,21 @@ namespace ORB_SLAM2
 
     class MapPoint;
     class KeyFrame;
+    
+    class KFIdComapre
+    {
+    public:
+	bool operator()(const KeyFrame *kfleft, const KeyFrame *kfright) const;
+    };
 
     class Map
     {
+	
+    public:
+	
+	// 更新绝对尺度
+	void UpdateScale(const double &scale);
+	
         public:
             // 默认构造函数。
             Map();
@@ -57,7 +69,9 @@ namespace ORB_SLAM2
         protected:
 
             std::set<MapPoint *> mspMapPoints;                  // 地图点云集。 
-            std::set<KeyFrame *> mspKeyFrames;                  // 关键帧集。
+            // std::set<KeyFrame *> mspKeyFrames;                  // 关键帧集。
+
+            std::set<KeyFrame *, KFIdComapre> mspKeyFrames;        // 关键帧集。
 
 
             std::vector<MapPoint *> mvpReferenceMapPoints;      // 参考点云集。

@@ -13,6 +13,8 @@
 #include <mutex>
 #include "Thirdparty/g2o/g2o/types/types_seven_dof_expmap.h"
 
+#include "IMU/configparam.h"
+
 namespace ORB_SLAM2
 {
 
@@ -23,6 +25,18 @@ namespace ORB_SLAM2
 
     class LoopClosing
     {
+    public:
+	
+	// Vison+IMU
+	ConfigParam *mpParams;
+	bool GetMapUpdateFlagForTracking();
+	void SetMapUpdateFlagInTracking(bool bflag);
+	
+    protected:
+	std::mutex mMutexMapUpdateFlag;
+	bool mbMapUpdateFlagForTracking;
+	
+	
         public:
 
             typedef pair<set<KeyFrame *>,int> ConsistentGroup;
@@ -32,8 +46,9 @@ namespace ORB_SLAM2
         public:
 
             // 构造函数。
-            LoopClosing(Map *pMap, KeyFrameDatabase *pDB, ORBVocabulary *pVoc, const bool bFixScale);
-            
+            // LoopClosing(Map *pMap, KeyFrameDatabase *pDB, ORBVocabulary *pVoc, const bool bFixScale);
+	    LoopClosing(Map *pMap, KeyFrameDatabase *pDB, ORBVocabulary *pVoc, const bool bFixScale, ConfigParam *pParams);
+
             // 设置跟踪线程对象指针。
             void SetTracker(Tracking *pTracker);
 
@@ -127,6 +142,8 @@ namespace ORB_SLAM2
 
             // 双目/RGB-D固定尺度
             bool mbFixScale;
+	    
+	    bool mnFullBAIdx;
 
     };
 
