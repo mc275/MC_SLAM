@@ -1,17 +1,21 @@
-
+# VI-SLAM**
 This is not completed for VISLAM
 
 Completed
+
 	the IMU Data class and Preintegrator lib, image and imu synchronize for rosbag
+
 To do
+
     add the lib into the SLAM 
+
     add the data access not used ros framework
 
 *****
 
 An implementation of [Visual Inertial ORBSLAM](https://arxiv.org/abs/1610.05949) based on [ORB-SLAM2](https://github.com/raulmur/ORB_SLAM2)
 
-Not bug-free. Just try the basic ideas of Visual Inertial SLAM in above paper and reference to jingpang/LearnVIORB software frame . Welcome to improve it together!
+Not bug-free. Just try the basic ideas of Visual Inertial SLAM in above paper and reference to jingpang/LearnVIORB software frame . 
 
 Build with `build.sh`. Modify the path in `config/euroc.yaml`. 
 
