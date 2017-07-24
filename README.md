@@ -1,4 +1,4 @@
-# VI-SLAM**
+# VI-SLAM
 This is not completed for VISLAM
 
 Completed
