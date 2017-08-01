@@ -19,6 +19,189 @@ namespace ORB_SLAM2
     float Frame::mfGridElementWidthInv, Frame::mfGridElementHeightInv; 
 
 
+    
+    /******************************VI SLAM*************************/
+    // 利用IMU数据计算预积分，保存在IMUPreInt
+    void Frame::ComputeIMUPreIntSinceLastFrame(const Frame* pLastF, IMUPreintegrator& IMUPreInt) const
+    {
+	// 重置预积分数据
+	IMUPreInt.reset();
+	
+	const std::vector<IMUData> &vIMUSInceLastFrame = mvIMUDataSinceLastFrame;
+	
+	Vector3d bg = pLastF->GetNavState().Get_BiasGyr();
+	Vector3d ba = pLastF->GetNavState().Get_BiasAcc();
+	
+	// 上一帧到第一个IMU数据的预积分值
+	{
+	    const IMUData & imu = vIMUSInceLastFrame.front();
+	    // 保存第一个IMU数据与上一帧的时间差
+	    double dt = imu._t - pLastF->mTimeStamp;
+	    IMUPreInt.update(imu._g - bg, imu._a - ba, dt);
+	    
+	    if(dt < 0)
+	    {
+		cerr << std::fixed << std::setprecision(3) << "dt = " << dt << ", this frame vs last imu time:" << pLastF->mTimeStamp << " vs " << imu._t<<endl;
+		std::cerr.unsetf(std::ios::showbase);
+	    }   
+	}
+	
+	for(size_t i=0; i<vIMUSInceLastFrame.size(); i++)
+	{
+	    const IMUData &imu = vIMUSInceLastFrame[i];
+	    double nextt;					// 下一个时刻的imu数据时间戳
+	    // 本组的imu数据的最后一个，时间戳是当前帧
+	    if(i==vIMUSInceLastFrame.size()-1)
+		nextt = mTimeStamp;
+	    else
+		nextt = vIMUSInceLastFrame[i+1]._t;
+	    
+	    double dt = nextt - imu._t;
+	    // 预积分计算PRV
+	    IMUPreInt.update(imu._g-bg, imu._a-ba, dt);
+	    
+	    // 测试输出
+	    if(dt <= 0)
+	    {
+		cerr << std::fixed << std::setprecision(3) << "dt = " << dt << ", this vs next time: " << imu._t << "vs" << nextt << endl;
+		std::cerr.unsetf(std::ios::showbase);
+	    }
+	}
+	
+    }
+    
+    
+    // 更新当前帧pose
+    void Frame::UpdatePoseFromNS(const cv::Mat& Tbc)
+    {
+	cv::Mat Rbc = Tbc.rowRange(0,3).colRange(0,3).clone();
+	cv::Mat Pbc = Tbc.rowRange(0,3).col(3).clone();
+	
+	cv::Mat Rwb = Converter::toCvMat(mNavState.Get_RotMatrix());
+	cv::Mat Pwb = Converter::toCvMat(mNavState.Get_P());
+	
+	cv::Mat Rcw = (Rwb*Rbc).t();
+	cv::Mat Pwc = Rwb*Pbc + Pwb;
+	cv::Mat Pcw = -Rcw*Pwc;
+	
+	cv::Mat Tcw = cv::Mat::eye(4,4,CV_32F);
+	Rcw.copyTo(Tcw.rowRange(0,3).colRange(0,3));
+	Pcw.copyTo(Tcw.rowRange(0,3).col(3));
+	
+	SetPose(Tcw);
+	
+    }
+    
+    
+    
+    // 更新导航状态
+    void Frame::UpdateNavState(const IMUPreintegrator& imupreint, const Vector3d& gw)
+    {
+	Converter::updateNS(mNavState, imupreint, gw);
+    }
+    
+
+
+    const NavState &Frame::GetNavState(void) const
+    {
+	return mNavState;
+    }
+    
+    
+    
+    void Frame::SetInitialNavStateAndBias(const NavState& ns)
+    {
+	mNavState = ns;
+	mNavState.Set_BiasGyr(ns.Get_BiasGyr()+ns.Get_dBias_Gyr());
+	mNavState.Set_BiasAcc(ns.Get_BiasAcc()+ns.Get_dBias_Acc());
+	mNavState.Set_DeltaBiasGyr(Vector3d::Zero());
+	mNavState.Set_DeltaBiasAcc(Vector3d::Zero());
+    }
+    
+    
+    
+    void Frame::SetNavStateBiasGyr(const Vector3d& bg)
+    {
+	mNavState.Set_BiasGyr(bg);
+    }
+    
+    
+    
+    void Frame::SetNavStateBiasAcc(const Vector3d& ba)
+    {
+	mNavState.Set_BiasAcc(ba);
+    }
+
+    
+    
+    void Frame::SetNavState(const NavState& ns)
+    {
+	mNavState = ns;
+    }
+
+
+
+    Frame::Frame(const cv::Mat& imGray, const double& timeStamp, const std::vector<IMUData>& vimu, ORBextractor* extractor, ORBVocabulary* voc, 
+		 cv::Mat& K, cv::Mat& distCoef, const float& bf, const float& thDepth, KeyFrame* pLastKF):
+		 mpORBvocabulary(voc), mpORBextractorLeft(extractor), mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
+		 mTimeStamp(timeStamp), mK(K.clone()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
+    {
+	
+	// 保存imu数据
+	mvIMUDataSinceLastFrame = vimu;
+	
+	mnId = nNextId++;
+	
+	// 尺度信息
+	mnScaleLevels = mpORBextractorLeft->GetLevels();
+	mfScaleFactor = mpORBextractorLeft->GetScaleFactor();
+	mfLogScaleFactor = log(mfScaleFactor);
+	mvScaleFactors = mpORBextractorLeft->GetScaleFactors();
+	mvInvScaleFactors = mpORBextractorLeft->GetInverseScaleFactors();
+	mvLevelSigma2 = mpORBextractorLeft->GetScaleSigmaSquares();
+	mvInvLevelSigma2 = mpORBextractorLeft->GetInverseScaleSigmaSquares();
+	
+	ExtractORB(0, imGray);
+	
+	N = mvKeys.size();
+	
+	if(mvKeys.empty())
+	    return;
+	
+	UndistortKeyPoints();
+	
+	// 设定标志位，表示无立体匹配信息
+	mvuRight = vector<float>(N,-1);
+	mvDepth = vector<float>(N,-1);
+	
+	mvpMapPoints = vector<MapPoint *>(N, static_cast<MapPoint *>(NULL));
+	mvbOutlier = vector<bool>(N,false);
+	
+	if(mbInitialComputations)
+	{
+	    ComputeImageBounds(imGray);
+	    mfGridElementWidthInv = static_cast<float>(FRAME_GRID_COLS)/static_cast<float>(mnMaxX-mnMinX);
+	    mfGridElementHeightInv = static_cast<float>(FRAME_GRID_ROWS)/static_cast<float>(mnMaxY-mnMinY);
+	    
+	    fx = K.at<float>(0,0);
+	    fy = K.at<float>(1,1);
+	    cx = K.at<float>(0,2);
+		cy = K.at<float>(1,2);
+	    invfx = 1.0f/fx;
+	    invfy = 1.0f/fy;
+	    
+	    mbInitialComputations = false;
+	}
+	
+	mb = mbf/fx;
+	
+	AssignFeaturesToGrid();
+	
+    }
+
+    
+    /**********************************************************/
+    
     // 默认构造函数。 
     Frame::Frame()
     {
@@ -49,6 +232,10 @@ namespace ORB_SLAM2
         if(!frame.mTcw.empty())
             SetPose(frame.mTcw);
 
+		mvIMUDataSinceLastFrame = frame.mvIMUDataSinceLastFrame;
+		mNavState = frame.GetNavState();
+		mMargCovInv = frame.mMargCovInv;
+		mNavStatePrior = frame.mNavStatePrior;
     }
     
     
@@ -208,6 +395,7 @@ namespace ORB_SLAM2
         // 设定标志位，表示无立体匹配信息。
         mvuRight = vector<float>(N, -1);
         mvDepth = vector<float>(N, -1);
+	
         mvpMapPoints = vector<MapPoint *>(N, static_cast<MapPoint *>(NULL));
         mvbOutlier = vector<bool>(N, false);
 

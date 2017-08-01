@@ -14,8 +14,6 @@
 #include <vector>
 #include <string>
 
-#include "../DUtils/config.h"
-
 namespace DBoW2 {
 
 /// Generic class to encapsulate functions to manage descriptors.
@@ -24,7 +22,7 @@ namespace DBoW2 {
  * parameter F when creating Templated structures
  * (TemplatedVocabulary, TemplatedDatabase, ...)
  */
-class EXPORT FClass
+class FClass
 {
   class TDescriptor;
   typedef const TDescriptor *pDescriptor;

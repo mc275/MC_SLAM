@@ -14,6 +14,15 @@ namespace ORB_SLAM2
     // 静态成员变量定义，Id从0开始。
     long unsigned int MapPoint::nNextId = 0;
     mutex MapPoint::mGlobalMutex;
+    
+    
+    
+    // VI SLAM
+    bool cmpKeyFrameId::operator()(const KeyFrame* a, const KeyFrame* b) const
+    {
+	return a->mnId < b->mnId;
+    }
+
 
 
     /* 
@@ -70,6 +79,17 @@ namespace ORB_SLAM2
         mnId = nNextId++;
 
     } 
+
+    
+    
+    // VI SLAM 更新点云尺度
+    void MapPoint::UpdateScale(float scale)
+    {
+	SetWorldPos(GetWorldPos()*scale);
+	mfMaxDistance *= scale;
+	mfMinDistance *= scale;
+    }
+
 
 
 
@@ -144,11 +164,29 @@ namespace ORB_SLAM2
                     nObs--;
 
                 mObservations.erase(pKF);
+		
+		// 增加参考帧机制
+		KeyFrame *pKFrefnew = NULL;
+		for(auto ob : mObservations)
+		{
+		    KeyFrame *pkfi = ob.first;
+		    if(!pkfi->isBad())
+		    {
+			pKFrefnew = pkfi;
+			break;
+		    }    
+		}
 
                 // 如果该关键帧是参考帧(创建地图点的关键帧)。
                 if(mpRefKF == pKF)
+		{
                     mpRefKF = mObservations.begin()->first;
 
+		    if(!pKFrefnew)
+			mpRefKF = pKFrefnew;
+		    else
+			bBad = true;
+		}
                 // 如果观测到该点云的相机数少于2，丢弃该点。
                 if(nObs<=2)
                     bBad = true;
@@ -162,7 +200,7 @@ namespace ORB_SLAM2
 
 
     // 获取观测该点云的关键帧KF和该点云在KF中的索引。
-    map<KeyFrame *, size_t> MapPoint::GetObservations()
+    mapMapPointObs/*map<KeyFrame *, size_t>*/ MapPoint::GetObservations()
     {
         unique_lock<mutex> lock(mMutexFeatures);
         return mObservations;
@@ -180,7 +218,7 @@ namespace ORB_SLAM2
     // 设置该点为坏点，擦除可以观测到该MapPoint的所有关键帧与该MapPoint的关联关系。
     void MapPoint::SetBadFlag()
     {
-        map<KeyFrame *, size_t> obs;
+        mapMapPointObs/*map<KeyFrame *, size_t>*/ obs;
         {
             unique_lock<mutex> lock1(mMutexFeatures);
             unique_lock<mutex> lock2(mMutexPos);
@@ -190,7 +228,7 @@ namespace ORB_SLAM2
             mObservations.clear();
         }
 
-        for(map<KeyFrame*, size_t>::iterator mit=obs.begin(), mend=obs.end(); mit!=mend; mit++)
+        for(mapMapPointObs/*map<KeyFrame*, size_t>*/::iterator mit=obs.begin(), mend=obs.end(); mit!=mend; mit++)
         {
             KeyFrame *pKF = mit->first;
             // 擦除pKF中索引号为mit->second的MapPoint。
@@ -218,7 +256,7 @@ namespace ORB_SLAM2
             return;
 
         int nvisible, nfound;
-        map<KeyFrame*, size_t> obs;
+        mapMapPointObs/*map<KeyFrame*, size_t>*/ obs;
         {
             unique_lock<mutex> lock1(mMutexFeatures);
             unique_lock<mutex> lock2(mMutexPos);
@@ -232,7 +270,7 @@ namespace ORB_SLAM2
         }
 
         // 更新所有能观测到该MapPoint的KeyFrame的关联。
-        for(map<KeyFrame *, size_t>::iterator mit=obs.begin(), mend=obs.end(); mit!=mend; mit++)
+        for(mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit=obs.begin(), mend=obs.end(); mit!=mend; mit++)
         {
             KeyFrame *pKF = mit->first;
 
@@ -309,7 +347,7 @@ namespace ORB_SLAM2
     {
 
         vector<cv::Mat> vDescriptors;
-        map<KeyFrame *, size_t> observations;
+        mapMapPointObs/*map<KeyFrame *, size_t>*/ observations;
 
         {
             unique_lock<mutex> lock1(mMutexFeatures);
@@ -324,7 +362,7 @@ namespace ORB_SLAM2
         vDescriptors.reserve(observations.size());
 
         // 遍历观测到该MapPoint的所有关键帧，获得ORB描述子，插入到vDescriptors中。
-        for(map<KeyFrame *, size_t>::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
+        for(mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
         {
             KeyFrame *pKF = mit->first;
 
@@ -424,7 +462,7 @@ namespace ORB_SLAM2
     */
     void MapPoint::UpdateNormalAndDepth()
     {
-        map<KeyFrame *, size_t> observations;
+        mapMapPointObs/*map<KeyFrame *, size_t>*/ observations;
         KeyFrame *pRefKF;
         cv::Mat Pos;       
         {
@@ -444,7 +482,7 @@ namespace ORB_SLAM2
 
         cv::Mat normal = cv::Mat::zeros(3,1,CV_32F);
         int n=0;
-        for(map<KeyFrame *, size_t>::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
+        for(mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
         {
             KeyFrame *pKF = mit->first;
             cv::Mat Owi = pKF->GetCameraCenter();

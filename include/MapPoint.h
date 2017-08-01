@@ -97,9 +97,9 @@ namespace ORB_SLAM2
             float GetMaxDistanceInvariance();
 
             // 预测尺度。
-            // int PredictScale(const float &currentDist, const float &logScaleFactor);
-	    int PredictScale(const float &currentDist, KeyFrame *pKF);
-	    int PredictScale(const float &currentDist, Frame *pF);
+            int PredictScale(const float &currentDist, const float &logScaleFactor);
+	    // int PredictScale(const float &currentDist, KeyFrame *pKF);
+	    // int PredictScale(const float &currentDist, Frame *pF);
 	    
 
         public:

@@ -33,8 +33,6 @@
 
 #include "../DUtils/Random.h"
 
-#include "../DUtils/config.h"
-
 using namespace std;
 
 namespace DBoW2 {
@@ -43,8 +41,8 @@ namespace DBoW2 {
 /// @param F class of descriptor functions
 template<class TDescriptor, class F>
 /// Generic Vocabulary
-class EXPORT TemplatedVocabulary 
-{
+class TemplatedVocabulary
+{		
 public:
   
   /**
@@ -577,8 +575,8 @@ void TemplatedVocabulary<TDescriptor,F>::create(
   m_words.clear();
   
   // expected_nodes = Sum_{i=0..L} ( k^i )
-  int expected_nodes = 
-    (int)((pow((double)m_k, (double)m_L + 1) - 1)/(m_k - 1));
+	int expected_nodes = 
+		(int)((pow((double)m_k, (double)m_L + 1) - 1)/(m_k - 1));
 
   m_nodes.reserve(expected_nodes); // avoid allocations when creating the tree
   
@@ -593,7 +591,7 @@ void TemplatedVocabulary<TDescriptor,F>::create(
   // create the tree
   HKmeansStep(0, features, 1);
 
-  // create the words 即tree的叶子结点
+  // create the words
   createWords();
 
   // and set the weight of each node of the tree
@@ -661,11 +659,11 @@ void TemplatedVocabulary<TDescriptor,F>::HKmeansStep(NodeId parent_id,
         
   // features associated to each cluster
   vector<TDescriptor> clusters;
-  vector<vector<unsigned int> > groups; // groups[i] = [j1, j2, ...]
-  // j1, j2, ... indices of descriptors associated to cluster i
+	vector<vector<unsigned int> > groups; // groups[i] = [j1, j2, ...]
+	// j1, j2, ... indices of descriptors associated to cluster i
 
   clusters.reserve(m_k);
-  groups.reserve(m_k);
+	groups.reserve(m_k);
   
   //const int msizes[] = { m_k, descriptors.size() };
   //cv::SparseMat assoc(2, msizes, CV_8U);
@@ -697,14 +695,14 @@ void TemplatedVocabulary<TDescriptor,F>::HKmeansStep(NodeId parent_id,
     {
       // 1. Calculate clusters
 
-      if(first_time)
-      {
+			if(first_time)
+			{
         // random sample 
         initiateClusters(descriptors, clusters);
       }
       else
       {
-        // calculate cluster centres 计算聚类中心
+        // calculate cluster centres
 
         for(unsigned int c = 0; c < clusters.size(); ++c)
         {
@@ -779,7 +777,6 @@ void TemplatedVocabulary<TDescriptor,F>::HKmeansStep(NodeId parent_id,
         goon = false;
         for(unsigned int i = 0; i < current_association.size(); i++)
         {
-          // 比较上一次和这一次聚类的结果，如果不同则再迭代
           if(current_association[i] != last_association[i]){
             goon = true;
             break;
@@ -787,14 +784,14 @@ void TemplatedVocabulary<TDescriptor,F>::HKmeansStep(NodeId parent_id,
         }
       }
 
-      if(goon)
-      {
-        // copy last feature-cluster association
-        last_association = current_association;
-        //last_assoc = assoc.clone();
-      }
-      
-    } // while(goon)
+			if(goon)
+			{
+				// copy last feature-cluster association
+				last_association = current_association;
+				//last_assoc = assoc.clone();
+			}
+			
+		} // while(goon)
     
   } // if must run kmeans
   
@@ -860,14 +857,6 @@ void TemplatedVocabulary<TDescriptor,F>::initiateClustersKMpp(
   // 5. Now that the initial centers have been chosen, proceed using standard k-means 
   //    clustering.
 
-  // 1. 从输入的数据点集合中随机选择一个点作为第一个聚类中心
-  // 2. 对于数据集中的每一个点x，计算它与最近聚类中心(指已选择的聚类中心)的距离D(x)并保存在一个数组里，
-  //    然后把这些距离加起来得到Sum(D(x))。
-  // 3. 选择一个新的数据点作为新的聚类中心，选择的原则是：D(x)较大的点，被选取作为聚类中心的概率较大
-  //    实际做法：取一个0～Sum(D(x))之间的随机值Random，计算Sum(D(0)，D(1)...D(j))>=Random，第j个点为种子点
-  // 4. 重复2和3直到k个聚类中心被选出来
-  // 5. 利用这k个初始的聚类中心来运行标准的k-means算法
-
   DUtils::Random::SeedRandOnce();
 
   clusters.resize(0);
@@ -899,7 +888,7 @@ void TemplatedVocabulary<TDescriptor,F>::initiateClustersKMpp(
       if(*dit > 0)
       {
         double dist = F::distance(*(*fit), clusters.back());
-        if(dist < *dit) *dit = dist; // 仅保存最近的距离，即与最近聚类中心的距离
+        if(dist < *dit) *dit = dist;
       }
     }
     
@@ -983,7 +972,7 @@ void TemplatedVocabulary<TDescriptor,F>::setNodeWeights
     // Note: this actually calculates the idf part of the tf-idf score.
     // The complete tf-idf score is calculated in ::transform
 
-    vector<unsigned int> Ni(NWords, 0); // 统计词频，范围为0～training_features.size()
+    vector<unsigned int> Ni(NWords, 0);
     vector<bool> counted(NWords, false);
     
     typename vector<vector<TDescriptor> >::const_iterator mit;
@@ -1006,7 +995,7 @@ void TemplatedVocabulary<TDescriptor,F>::setNodeWeights
       }
     }
 
-    // set ln(N/Ni) iDf是一个词语普遍重要性的度量, Ni越小，重要程度越高
+    // set ln(N/Ni)
     for(unsigned int i = 0; i < NWords; i++)
     {
       if(Ni[i] > 0)
@@ -1101,7 +1090,7 @@ void TemplatedVocabulary<TDescriptor,F>::transform(
   LNorm norm;
   bool must = m_scoring_object->mustNormalize(norm);
 
-  typename vector<TDescriptor>::const_iterator fit;
+	typename vector<TDescriptor>::const_iterator fit;
 
   if(m_weighting == TF || m_weighting == TF_IDF)
   {
@@ -1419,7 +1408,7 @@ bool TemplatedVocabulary<TDescriptor,F>::loadFromTextFile(const std::string &fil
         ssnode >> nIsLeaf;
 
         stringstream ssd;
-        for(int iD=0;iD<F::L;iD++) // F::L
+        for(int iD=0;iD<F::L;iD++)
         {
             string sElement;
             ssnode >> sElement;
@@ -1486,38 +1475,35 @@ bool TemplatedVocabulary<TDescriptor,F>::loadFromBinaryFile(const std::string &f
   f.read((char*)&m_scoring, sizeof(m_scoring));
   f.read((char*)&m_weighting, sizeof(m_weighting));
   createScoringObject();
-  
+
   m_words.clear();
   m_words.reserve(pow((double)m_k, (double)m_L + 1));
   m_nodes.clear();
   m_nodes.resize(nb_nodes+1);
   m_nodes[0].id = 0;
-  char* buf = new char [size_node];
-  int nid = 1;
+  char buf[size_node]; int nid = 1;
   while (!f.eof()) {
-	f.read(buf, size_node);
-	m_nodes[nid].id = nid;
-	// FIXME
-	const int* ptr=(int*)buf;
-	m_nodes[nid].parent = *ptr;
-	//m_nodes[nid].parent = *(const int*)buf;
-	m_nodes[m_nodes[nid].parent].children.push_back(nid);
-	m_nodes[nid].descriptor = cv::Mat(1, F::L, CV_8U); //F::L
-	memcpy(m_nodes[nid].descriptor.data, buf+4, F::L); //F::L
-	m_nodes[nid].weight = *(float*)(buf+4+F::L); // F::L
-	if (buf[8+F::L]) { // is leaf //F::L
-	  int wid = m_words.size();
-	  m_words.resize(wid+1);
-	  m_nodes[nid].word_id = wid;
-	  m_words[wid] = &m_nodes[nid];
-	}
-	else
-	  m_nodes[nid].children.reserve(m_k);
-	nid+=1;
+    f.read(buf, size_node);
+    m_nodes[nid].id = nid;
+    // FIXME
+    const int* ptr=(int*)buf;
+    m_nodes[nid].parent = *ptr;
+    //m_nodes[nid].parent = *(const int*)buf;
+    m_nodes[m_nodes[nid].parent].children.push_back(nid);
+    m_nodes[nid].descriptor = cv::Mat(1, F::L, CV_8U);
+    memcpy(m_nodes[nid].descriptor.data, buf+4, F::L);
+    m_nodes[nid].weight = *(float*)(buf+4+F::L);
+    if (buf[8+F::L]) { // is leaf
+      int wid = m_words.size();
+      m_words.resize(wid+1);
+      m_nodes[nid].word_id = wid;
+      m_words[wid] = &m_nodes[nid];
+    }
+    else
+      m_nodes[nid].children.reserve(m_k);
+    nid+=1;
   }
   f.close();
-
-  delete[] buf;
   return true;
 }
 
@@ -1530,7 +1516,7 @@ void TemplatedVocabulary<TDescriptor,F>::saveToBinaryFile(const std::string &fil
   f.open(filename.c_str(), ios_base::out|ios::binary);
   unsigned int nb_nodes = m_nodes.size();
   float _weight;
-  unsigned int size_node = sizeof(m_nodes[0].parent) + F::L*sizeof(char) + sizeof(_weight) + sizeof(bool); //F::L
+  unsigned int size_node = sizeof(m_nodes[0].parent) + F::L*sizeof(char) + sizeof(_weight) + sizeof(bool);
   f.write((char*)&nb_nodes, sizeof(nb_nodes));
   f.write((char*)&size_node, sizeof(size_node));
   f.write((char*)&m_k, sizeof(m_k));
@@ -1538,11 +1524,11 @@ void TemplatedVocabulary<TDescriptor,F>::saveToBinaryFile(const std::string &fil
   f.write((char*)&m_scoring, sizeof(m_scoring));
   f.write((char*)&m_weighting, sizeof(m_weighting));
   for(size_t i=1; i<nb_nodes;i++) {
-	const Node& node = m_nodes[i];
-	f.write((char*)&node.parent, sizeof(node.parent));
-	f.write((char*)node.descriptor.data, F::L);//F::L
-	_weight = node.weight; f.write((char*)&_weight, sizeof(_weight));
-	bool is_leaf = node.isLeaf(); f.write((char*)&is_leaf, sizeof(is_leaf)); // i put this one at the end for alignement....
+    const Node& node = m_nodes[i];
+    f.write((char*)&node.parent, sizeof(node.parent));
+    f.write((char*)node.descriptor.data, F::L);
+    _weight = node.weight; f.write((char*)&_weight, sizeof(_weight));
+    bool is_leaf = node.isLeaf(); f.write((char*)&is_leaf, sizeof(is_leaf)); // i put this one at the end for alignement....
   }
   f.close();
 }

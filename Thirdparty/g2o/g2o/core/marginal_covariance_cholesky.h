@@ -35,13 +35,9 @@
 
 #ifdef _MSC_VER
 #include <unordered_map>
-#elif __APPLE__
-#include <boost/tr1/unordered_map.hpp>
 #else
 #include <tr1/unordered_map>
 #endif
-
-#include "g2o_core_api.h"
 
 
 namespace g2o {
@@ -49,7 +45,7 @@ namespace g2o {
   /**
    * \brief computing the marginal covariance given a cholesky factor (lower triangle of the factor)
    */
-	class G2O_CORE_API MarginalCovarianceCholesky {
+  class  MarginalCovarianceCholesky {
     protected:
       /**
        * hash struct for storing the matrix elements needed to compute the covariance

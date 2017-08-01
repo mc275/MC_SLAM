@@ -17,14 +17,35 @@
 namespace ORB_SLAM2
 {
 
-    // 构造函数，初始化成员变量。
-    LoopClosing::LoopClosing(Map *pMap, KeyFrameDatabase *pDB, ORBVocabulary *pVoc, const bool bFixScale):
-        mbResetRequested(false), mbFinishRequested(false), mbFinished(true), mpMap(pMap),
-        mpKeyFrameDB(pDB), mpORBVocabulary(pVoc), mLastLoopKFid(0), mbRunningGBA(false), mbFinishedGBA(true),
-        mbStopGBA(false), mbFixScale(bFixScale)
+    
+    /*********************VI SLAM*******************/
+    bool LoopClosing::GetMapUpdateFlagForTracking()
     {
+	unique_lock<mutex> lock(mMutexMapUpdateFlag);
+	return mbMapUpdateFlagForTracking;
+    }
+
+    
+    
+    void LoopClosing::SetMapUpdateFlagInTracking(bool bflag)
+    {
+	unique_lock<mutex> lock(mMutexMapUpdateFlag);
+	mbMapUpdateFlagForTracking = bflag;
+    }
+
+    
+    
+    /*********************************************/
+    
+    // 构造函数，初始化成员变量。
+    LoopClosing::LoopClosing(Map *pMap, KeyFrameDatabase *pDB, ORBVocabulary *pVoc, const bool bFixScale, ConfigParam *pParams):
+        mbResetRequested(false), mbFinishRequested(false), mbFinished(true), mpMap(pMap),
+        mpKeyFrameDB(pDB), mpORBVocabulary(pVoc), mpMatchedKF(NULL), mLastLoopKFid(0), mbRunningGBA(false), mbFinishedGBA(true),
+        mbStopGBA(false), mpThreadGBA(NULL), mbFixScale(bFixScale), mnFullBAIdx(0)
+    {
+		mpParams = pParams;
         mnCovisibilityConsistencyTh = 3;
-        mpMatchedKF = NULL;
+        // mpMatchedKF = NULL;
     }
 
     // 设置线程间对象的指针变量。
@@ -50,12 +71,15 @@ namespace ORB_SLAM2
                 // 闭环候选检测，检查Covisiblity图的一致性。
                 if(DetectLoop())
                 {
-                    // 计算相似变换，[sR|t]。双目和RGBD中s=1。
-                    if(ComputeSim3())
-                    {
-                        // 运行闭环融合和pose图优化。
-                        CorrectLoop();
-                    }
+		    if(mpLocalMapper->GetVINSInited())
+		    {
+			// 计算相似变换，[sR|t]。双目和RGBD中s=1。
+			if(ComputeSim3())
+			{
+			    // 运行闭环融合和pose图优化。
+			    CorrectLoop();
+			}
+		    }
                 }
             }
 
@@ -486,6 +510,10 @@ namespace ORB_SLAM2
         // 如果全局BA正在运行，终止。
         if(isRunningGBA())
         {
+	    
+	    cout << "Abort last global BA..." << endl;
+	    unique_lock<mutex> lock(mMutexGBA);
+	    
             // GBA状态标志符。
             mbStopGBA = true;
 
@@ -668,8 +696,12 @@ namespace ORB_SLAM2
         }
 
         // 步骤6 进行Essential图优化，LoopConnections是形成闭环后新生成的连接关系。
-        Optimizer::OptimizeEssentialGraph(mpMap, mpMatchedKF, mpCurrentKF, NonCorrectedSim3, CorrectedSim3, LoopConnections, mbFixScale);
-
+        // Optimizer::OptimizeEssentialGraph(mpMap, mpMatchedKF, mpCurrentKF, NonCorrectedSim3, CorrectedSim3, LoopConnections, mbFixScale);
+        Optimizer::OptimizeEssentialGraph(mpMap, mpMatchedKF, mpCurrentKF, NonCorrectedSim3, CorrectedSim3, LoopConnections, mbFixScale, this);
+	
+	// 地图更新完成，设置标志
+	SetMapUpdateFlagInTracking(true);
+        
         // 步骤7 添加当前帧与闭环匹配帧之间的连接关系，这个连接关系不优化。
         mpMatchedKF->AddLoopEdge(mpCurrentKF);
         mpCurrentKF->AddLoopEdge(mpMatchedKF);
@@ -768,16 +800,24 @@ namespace ORB_SLAM2
     // 运行全局BA，在单独的线程中。
     void LoopClosing::RunGlobalBundleAdjustment(unsigned long nLoopKF)
     {
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+	
         cout << "Starting Global Bundle Adjustment " << endl;
+	
+	int idx = mnFullBAIdx;
 
-        Optimizer::GlobalBundleAdjustment(mpMap, 20, &mbStopGBA, nLoopKF, false);
-        
+        // Optimizer::GlobalBundleAdjustment(mpMap, 20, &mbStopGBA, nLoopKF, false);
+        Optimizer::GlobalBundleAdjustmentNavStatePRV(mpMap, mpLocalMapper->GetGravityVec(), 10, &mbStopGBA, nLoopKF, false);
+	
         // 更新所有点云和关键帧。
 
         // 在全局BA期间， 局部地图线程正常工作，可能会插入不包括在全局BA中的新关键帧。
         // 新插入关键帧与更新的地图是不一致的，需要通过Spanning tree校正。
         {
             unique_lock<mutex> lock(mMutexGBA);
+	    
+	    if(idx != mnFullBAIdx)
+		return;
 
             // GBA没有运行完成，没有被终止。
             if(!mbStopGBA)
@@ -794,6 +834,8 @@ namespace ORB_SLAM2
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
 
+                cv::Mat cvTbc = ConfigParam::GetMatTbc();
+                
                 // 获取地图线程互斥变量。
                 unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
@@ -820,6 +862,19 @@ namespace ORB_SLAM2
                             pChild->mTcwGBA = Tchildc*pKF->mTcwGBA; 
                             // 避免重复添加。
                             pChild->mnBAGlobalForKF = nLoopKF;
+			    
+			    // 设置BA后的NavStateGBA和 更新后的状态 PVR
+			    pChild->mNavStateGBA = pChild->GetNavState();
+			    cv::Mat TwbGBA = Converter::toCvMatInverse(cvTbc*pChild->mTcwGBA);
+			    Matrix3d RwbGBA = Converter::toMatrix3d(TwbGBA.rowRange(0,3).colRange(0,3));
+			    Vector3d PwbGBA = Converter::toVector3d(TwbGBA.rowRange(0,3).col(3));
+			    Matrix3d Rw1 = pChild->mNavStateGBA.Get_RotMatrix();
+			    Vector3d Vw1 = pChild->mNavStateGBA.Get_V();
+			    Vector3d Vw2 = RwbGBA*Rw1.transpose()*Vw1;		// 修正后的速度
+			    pChild->mNavStateGBA.Set_Pos(PwbGBA);
+			    pChild->mNavStateGBA.Set_Rot(RwbGBA);
+			    pChild->mNavStateGBA.Set_Vel(Vw2);
+			    
                         }
 
                         // 关键帧pKF的子关键帧加入地图关键帧队列。
@@ -828,9 +883,14 @@ namespace ORB_SLAM2
 
                     // 保存GBA之前的位姿。
                     pKF->mTcwBefGBA = pKF->GetPose();
+		    
                     // 更新用GBA之后的位姿。
-                    pKF->SetPose(pKF->mTcwGBA);
-                    lpKFtoCheck.pop_front();
+                    // pKF->SetPose(pKF->mTcwGBA);
+                    pKF->mNavStateBefGBA = pKF->GetNavState();
+		    pKF->SetNavState(pKF->mNavStateGBA);
+		    pKF->UpdatePoseFromNS(cvTbc);
+		    
+		    lpKFtoCheck.pop_front();
                 }
 
                 // 校正地图点云。
@@ -871,13 +931,17 @@ namespace ORB_SLAM2
 
                 mpLocalMapper->Release();
                 cout << "Map updated!" <<endl;
+		
+		SetMapUpdateFlagInTracking(true);
             }   // if(!mbStopGBA)。
 
             // 设置全BA状态标志位。
                 mbFinishedGBA = true;
                 mbRunningGBA = false;
         }
-
+        
+        std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+	std::cout << "globalBA Time consumption = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() <<std::endl;
     }
 
 

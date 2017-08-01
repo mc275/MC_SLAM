@@ -36,8 +36,6 @@
 
 #ifdef _MSC_VER
 #include <unordered_map>
-#elif __APPLE__
-#include <boost/tr1/unordered_map.hpp>
 #else
 #include <tr1/unordered_map>
 #endif
@@ -124,8 +122,7 @@ namespace g2o {
             const SparseMatrixBlock* a = it->block;
             int srcOffset = rowBaseOfBlock(it->row);
             // destVec += *a.transpose() * srcVec (according to the sub-vector parts)
-            //internal::atxpy(*a, srcVec, srcOffset, destVec, destOffset);
-			internal::template atxpy<SparseMatrixBlock>(*a, srcVec, srcOffset, destVec, destOffset);
+            internal::atxpy(*a, srcVec, srcOffset, destVec, destOffset);
           }
         }
       }

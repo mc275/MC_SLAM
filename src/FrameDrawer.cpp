@@ -21,6 +21,9 @@ namespace ORB_SLAM2
         // 存储用于画图的Frame信息。
         // 包括：图像 特征点连线形成的轨迹（初始化时）框（跟踪时的MapPoint）圈（跟踪时的特点）。
         mIm = cv::Mat(480, 640, CV_8UC3, cv::Scalar(0, 0, 0));
+	
+	mStartTime = -1;
+	mCurTime = -1;
 
     }
 
@@ -154,6 +157,8 @@ namespace ORB_SLAM2
             s << " LOADING ORB VOCABULARY. PLEASE WAIT...";
         }
 
+        s << " | Time: " << mCurTime - mStartTime;
+        
         int baseline = 0;
         cv::Size textSize = cv::getTextSize(s.str(), cv::FONT_HERSHEY_PLAIN, 1, 1, &baseline);
         
@@ -199,7 +204,12 @@ namespace ORB_SLAM2
             }
         }
 		
-		mState = static_cast<int>(pTracker->mLastProcessedState);
+	mState = static_cast<int>(pTracker->mLastProcessedState);
+	
+	mCurTime = pTracker->mCurrentFrame.mTimeStamp;
+	if(mStartTime < 0)
+	    mStartTime = mCurTime;
+	
     }
 
 

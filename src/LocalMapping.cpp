@@ -5,6 +5,8 @@
 *   剔除冗余关键帧
 *   输出，将当前加入的关键帧和关联的地图点云加入通过函数InsertKeyFrame()加入到闭环检测队列mlpLoopKeyFrameQueue。
 */
+
+#include "Converter.h"
 #include "LocalMapping.h"
 #include "LoopClosing.h"
 #include "ORBmatcher.h"
@@ -14,12 +16,920 @@
 
 namespace ORB_SLAM2
 {
+using namespace std;
+    
+    /************************VI SLAM**************************/
+    
+    class KeyFrameInit
+    {
+        
+    public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+        
+        double mTimeStamp;
+        KeyFrameInit *mpPrevKeyFrame;
+        cv::Mat Twc;
+        IMUPreintegrator mIMUPreInt;
+        std::vector<IMUData> mvIMUData;
+        Vector3d bg;
+        
+        
+        // 构造函数
+        KeyFrameInit(KeyFrame &kf):
+            mTimeStamp(kf.mTimeStamp), mpPrevKeyFrame(NULL), Twc(kf.GetPoseInverse().clone()),
+            mIMUPreInt(kf.GetIMUPreInt()), mvIMUData(kf.GetVectorIMUData()), bg(0,0,0)
+        {
+            
+        }
+        
+        
+        void ComputePreInt(void)
+        {
+            if(mpPrevKeyFrame == NULL)
+            {
+                return;
+            }
+            else
+            {
+                // 重置IMUPre
+                mIMUPreInt.reset();
+                
+                if(mvIMUData.empty())
+                    return;
+                
+                // 考虑上一帧关键帧和第一个IMU数据的预积分
+                {
+                    const IMUData &imu = mvIMUData.front();
+                    double dt = std::max(0., imu._t - mpPrevKeyFrame->mTimeStamp);
+                    mIMUPreInt.update(imu._g-bg, imu._a, dt);
+                }
+                
+                for(size_t i=0; i<mvIMUData.size(); i++)
+                {
+                    const IMUData &imu = mvIMUData[i];
+                    double nextt;
+                    
+                    // 最后一帧
+                    if(i==mvIMUData.size()-1)
+                        nextt = mTimeStamp;
+                    else
+                        nextt = mvIMUData[i+1]._t;
+                    
+                    double dt = std::max(0., nextt - imu._t);
+                        
+                    mIMUPreInt.update(imu._g-bg, imu._a, dt);
+                }
+            }
+        }
+        
+    };
+    
+    
+    
+    //
+    bool LocalMapping::GetUpdatingInitPoses(void)
+    {
+        unique_lock<mutex> lock(mMutexUpdatingInitPoses);
+        return mbUpdatingInitPoses;
+    }
+    
+    void LocalMapping::SetUpdatingInitPoses(bool flag)
+    {
+        unique_lock<mutex> lock(mMutexUpdatingInitPoses);
+        mbUpdatingInitPoses = flag;
+    }
+    
+    
+    
+    KeyFrame *LocalMapping::GetMapUpdateKF()
+    {
+        unique_lock<mutex> lock(mMutexMapUpdateFlag);
+        return mpMapUpdateKF;
+    }
+    
+    bool LocalMapping::GetMapUpdateFlagForTracking()
+    {
+        unique_lock<mutex> lock(mMutexMapUpdateFlag);
+        return mbMapUpdateFlagForTracking;
+    }
+    
+    
+    
+    void LocalMapping::SetMapUpdateFlagInTracking(bool bflag)
+    {
+        unique_lock<mutex> lock(mMutexMapUpdateFlag);
+        mbMapUpdateFlagForTracking = bflag;
+        if(bflag)
+        {
+            mpMapUpdateKF = mpCurrentKeyFrame;
+        }
+    }
+    
+    
+    
+    bool LocalMapping::GetVINSInited(void)
+    {
+        unique_lock<mutex> lock(mMutexVINSInitFlag);
+        return mbVINSInited;
+    }
+    
+    void LocalMapping::SetVINSInited(bool flag)
+    {
+        unique_lock<mutex> lock(mMutexVINSInitFlag);
+        mbVINSInited = flag;
+    }
+    
+    bool LocalMapping::GetFirstVINSInited(void)
+    {
+        unique_lock<mutex> lock(mMutexFirstVINSInitFlag);
+        return mbFirstVINSInited;
+    }
+    
 
+    void LocalMapping::SetFirstVINSInited(bool flag)
+    {
+        unique_lock<mutex> lock(mMutexFirstVINSInitFlag);
+        mbFirstVINSInited = flag;
+    }
+    
+    
+    cv::Mat LocalMapping::GetGravityVec()
+    {
+        return mGravityVec.clone();
+    }
+    
+    cv::Mat LocalMapping::GetRwiInit()
+    {
+        return mRwiInit.clone();
+    }
+
+    
+    
+    // 初始化VINS线程
+    void LocalMapping::VINSInitThread()
+    {
+        unsigned long initedid = 0;
+        cerr<<"start VINSInitThread"<<endl;
+        
+        while(1)
+        {
+            if(KeyFrame::nNextId > 2)
+                if(!GetVINSInited() && mpCurrentKeyFrame->mnId > initedid)
+                {
+                    initedid = mpCurrentKeyFrame->mnId;
+                    
+                    bool tmpbool = TryInitVIO();
+                    
+                    if(tmpbool)
+                    {
+                        break;
+                    }
+                }
+                
+            usleep(3000);
+            
+            if(isFinished())
+                break;
+        }
+        
+    }
+    
+    
+    
+    // VIO线程初始化
+    bool LocalMapping::TryInitVIO(void)
+    {
+        
+	if(mpMap->KeyFramesInMap() <= mnLocalWindowSize)
+	    return false;
+	
+	static bool fopened = false;
+	static ofstream fgw, fscale, fbiasa, fcondnum, ftime, fbiasg;
+	string tmpfilepath = ConfigParam::getTmpFilePath();
+	
+	if(!fopened)
+	{
+	    // 输入正确的路径
+	    fgw.open(tmpfilepath+"gw.txt");
+	    fscale.open(tmpfilepath+"scale.txt");
+	    fbiasa.open(tmpfilepath+"biasa.txt");
+	    fcondnum.open(tmpfilepath+"condnum.txt");
+	    ftime.open(tmpfilepath+"computetime.txt");
+	    fbiasg.open(tmpfilepath+"biasg.txt");
+	    
+	    if(fgw.is_open() && fscale.is_open() && fbiasa.is_open() &&
+		    fcondnum.is_open() && ftime.is_open() && fbiasg.is_open())
+		fopened = true;
+	    else
+	    {
+		cerr<<"file open error in TryInitVIO"<<endl;
+		fopened = false;
+	    }
+	    
+	    fgw << std::fixed << std::setprecision(6);
+	    fscale << std::fixed << std::setprecision(6);
+	    fbiasa << std::fixed << std::setprecision(6);
+	    fcondnum << std::fixed << std::setprecision(6);
+	    ftime << std::fixed << std::setprecision(6);
+	    fbiasg << std::fixed << std::setprecision(6);
+	}
+	
+	Optimizer::GlobalBundleAdjustment(mpMap, 10);
+	
+	// 外参
+	cv::Mat Tbc = ConfigParam::GetMatTbc();
+	cv::Mat Rbc = Tbc.rowRange(0,3).colRange(0,3);
+	cv::Mat pbc = Tbc.rowRange(0,3).col(3);
+	cv::Mat Rcb = Rbc.t();
+	cv::Mat pcb = -Rcb*pbc;
+	
+	if(ConfigParam::GetRealTimeFlag())
+	{
+	    // 等待KF剔除，如果在运行，等待完成
+	    // 关键帧如果被复制，不剔除
+	    while(GetFlagCopyInitKFs())
+	    {
+		usleep(1000);
+	    }
+	}
+	
+	SetFlagCopyInitKFs(true);
+	
+	// 提取地图所有KF
+	vector<KeyFrame *> vScaleGravityKF = mpMap->GetAllKeyFrames();
+	int N = vScaleGravityKF.size();
+	KeyFrame *pNewestKF = vScaleGravityKF[N-1];
+	vector<cv::Mat > vTwc;
+	vector<IMUPreintegrator> vIMUPreInt;
+	
+	// 保存初始化需要的关键帧
+	vector<KeyFrameInit *> vKFInit;
+	for(int i =0; i<N; i++)
+	{
+	    KeyFrame *pKF = vScaleGravityKF[i];
+	    vTwc.push_back(pKF->GetPoseInverse());
+	    vIMUPreInt.push_back(pKF->GetIMUPreInt());
+	    
+	    KeyFrameInit *pkfi = new KeyFrameInit(*pKF);
+	    if(i!=0)
+	    {
+		pkfi->mpPrevKeyFrame = vKFInit[i-1];
+	    }
+	    vKFInit.push_back(pkfi);
+	}
+	
+	SetFlagCopyInitKFs(false);
+	
+	// 步骤1 计算gyro偏移
+	Vector3d bgest = Optimizer::OptimizeInitialGyroBias(vTwc, vIMUPreInt);
+	
+	// 更新 gyro bias和KF预积分
+	for(int i=0; i<N; i++)
+	{
+	    vKFInit[i]->bg = bgest;
+	}
+	for(int i=0; i<N; i++)
+	{
+	    vKFInit[i]->ComputePreInt();
+	}
+	
+	
+	// 步骤2 估计尺度和重力加速度向量(世界坐标系，实际是第一帧的坐标系下) 
+	
+	// 求解 Ax=B, x=[s,gw]
+	cv::Mat A = cv::Mat::zeros(3*(N-2), 4, CV_32F);
+	cv::Mat B = cv::Mat::zeros(3*(N-2), 1, CV_32F);
+	cv::Mat I3 = cv::Mat::eye(3, 3, CV_32F);
+	
+	for(int i=0; i<N-2; i++)
+	{
+	    
+	    KeyFrameInit *pKF2 = vKFInit[i+1];
+	    KeyFrameInit *pKF3 = vKFInit[i+2];
+	    
+	    // 关键帧间的时间间隔
+	    double dt12 = pKF2->mIMUPreInt.getDeltaTime();
+	    double dt23 = pKF3->mIMUPreInt.getDeltaTime();
+	    
+	    // IMU预积分值
+	    cv::Mat dp12 = Converter::toCvMat(pKF2->mIMUPreInt.getDeltaP());
+	    cv::Mat dv12 = Converter::toCvMat(pKF2->mIMUPreInt.getDeltaV());
+	    cv::Mat dp23 = Converter::toCvMat(pKF3->mIMUPreInt.getDeltaP());
+	    
+	    // 世界坐标系下相机位姿
+	    cv::Mat Twc1 = vTwc[i].clone();		// pKF1
+	    cv::Mat Twc2 = vTwc[i+1].clone();		// pKF2
+	    cv::Mat Twc3 = vTwc[i+2].clone();		// pKF3
+	    
+	    // 相机中心坐标
+	    cv::Mat pc1 = Twc1.rowRange(0,3).col(3);
+	    cv::Mat pc2 = Twc2.rowRange(0,3).col(3);
+	    cv::Mat pc3 = Twc3.rowRange(0,3).col(3);
+	    
+	    // 相机旋转
+	    cv::Mat Rc1 = Twc1.rowRange(0,3).colRange(0,3);
+	    cv::Mat Rc2 = Twc2.rowRange(0,3).colRange(0,3);
+	    cv::Mat Rc3 = Twc3.rowRange(0,3).colRange(0,3);
+	    
+	    // 求解方程A/B
+	    // lambda*s + beta*g = gamma
+	    cv::Mat lambda = (pc2-pc1)*dt23+(pc2-pc3)*dt12;
+	    cv::Mat beta = 0.5*I3*(dt12*dt12*dt23+dt12*dt23*dt23);
+	    cv::Mat gamma = (Rc3-Rc2)*pcb*dt12+(Rc1-Rc2)*pcb*dt23+Rc1*Rcb*dp12*dt23-Rc2*Rcb*dp23*dt12-Rc1*Rcb*dv12*dt12*dt23;
+	    lambda.copyTo(A.rowRange(3*i+0, 3*i+3).col(0));
+	    beta.copyTo(A.rowRange(3*i+0, 3*i+3).colRange(1,4));
+	    gamma.copyTo(B.rowRange(3*i+0, 3*i+3));
+	}
+	
+	// SVD分解
+	cv::Mat w,u,vt;
+	cv::SVDecomp(A, w, u, vt, cv::SVD::MODIFY_A);
+	
+	cv::Mat winv = cv::Mat::eye(4,4,CV_32F);
+	for(int i=0; i<4; i++)
+	{
+	    if(fabs(w.at<float>(i))<1e-10)
+	    {
+		w.at<float>(i) += 1e-10;
+		// test log
+		cerr<<"w(i) < 1e-10, w="<<endl<<w<<endl;
+	    }
+	    
+	    winv.at<float>(i,i) = 1./w.at<float>(i);
+	}
+	
+	cv::Mat x = vt.t()*winv*u.t()*B;
+	
+	// x=[s,gw]
+	double sstar = x.at<float>(0);
+	cv::Mat gwstar = x.rowRange(1,4);
+	
+	// test log
+	if(w.type()!=I3.type() || u.type()!=I3.type() || vt.type()!=I3.type())
+	    cerr<<"different mat type, I3,w,u,vt: "<<I3.type()<<","<<w.type()<<","<<u.type()<<","<<vt.type()<<endl;
+	
+	// 步骤3 
+	// gI = [0;0;1], the normalized gravity vector in an inertial frame, NED type with no orientation.
+	cv::Mat gI = cv::Mat::zeros(3, 1, CV_32F);
+	gI.at<float>(2) = 1;
+	cv::Mat gwn = gwstar/cv::norm(gwstar);
+	
+	// 计算gwstar指向
+	cv::Mat gIxgwn = gI.cross(gwn);
+	double normgIxgwn = cv::norm(gIxgwn);
+	cv::Mat vhat = gIxgwn/normgIxgwn;				// 重力与[0,0,1]旋转单位向量
+	double theta = std::atan2(normgIxgwn, gI.dot(gwn));		// 重力与[0,0,1]旋转向量旋转角
+	
+	Eigen::Vector3d vhateig = Converter::toVector3d(vhat);
+	Eigen::Matrix3d RWIeig = Sophus::SO3::exp(vhateig*theta).matrix();	// 重力与[0,0,1]旋转矩阵
+	cv::Mat Rwi = Converter::toCvMat(RWIeig);
+	cv::Mat GI = gI*ConfigParam::GetG();
+	
+	// 求解Cx=D, x=[s,dthetaxy, ba]
+	cv::Mat C = cv::Mat::zeros(3*(N-2), 6, CV_32F);
+	cv::Mat D = cv::Mat::zeros(3*(N-2), 1, CV_32F);
+	
+	
+	for(int i=0; i<N-2; i++)
+	{
+	    KeyFrameInit *pKF2 = vKFInit[i+1];
+	    KeyFrameInit *pKF3 = vKFInit[i+2];
+	    
+	    // 关键帧间的时间间隔
+	    double dt12 = pKF2->mIMUPreInt.getDeltaTime();
+	    double dt23 = pKF3->mIMUPreInt.getDeltaTime();
+	    
+	    // IMU预积分值
+	    cv::Mat dp12 = Converter::toCvMat(pKF2->mIMUPreInt.getDeltaP());
+	    cv::Mat dv12 = Converter::toCvMat(pKF2->mIMUPreInt.getDeltaV());
+	    cv::Mat dp23 = Converter::toCvMat(pKF3->mIMUPreInt.getDeltaP());
+	    cv::Mat Jpba12 = Converter::toCvMat(pKF2->mIMUPreInt.getJPBiasa());
+	    cv::Mat Jvba12 = Converter::toCvMat(pKF2->mIMUPreInt.getJVBiasa());
+	    cv::Mat Jpba23 = Converter::toCvMat(pKF3->mIMUPreInt.getJPBiasa());
+	    
+	    // 世界坐标系下相机位姿
+	    cv::Mat Twc1 = vTwc[i].clone();		// pKF1
+	    cv::Mat Twc2 = vTwc[i+1].clone();		// pKF2
+	    cv::Mat Twc3 = vTwc[i+2].clone();		// pKF3
+	    
+	    // 相机中心坐标
+	    cv::Mat pc1 = Twc1.rowRange(0,3).col(3);
+	    cv::Mat pc2 = Twc2.rowRange(0,3).col(3);
+	    cv::Mat pc3 = Twc3.rowRange(0,3).col(3);
+	    
+	    // 相机旋转
+	    cv::Mat Rc1 = Twc1.rowRange(0,3).colRange(0,3);
+	    cv::Mat Rc2 = Twc2.rowRange(0,3).colRange(0,3);
+	    cv::Mat Rc3 = Twc3.rowRange(0,3).colRange(0,3);
+	    
+	    // 见论文
+	    // lambda*s + phi*dthetaxy + zeta*ba = psi
+	    cv::Mat lambda = (pc2-pc1)*dt23 + (pc2-pc3)*dt12;
+	    cv::Mat phi = -0.5*(dt12*dt12*dt23+dt12*dt23*dt23)*Rwi*SkewSymmetricMatrix(GI);
+	    cv::Mat zeta = Rc2*Rcb*Jpba23*dt12+Rc1*Rcb*Jvba12*dt12*dt23-Rc1*Rcb*Jpba12*dt23;
+	    cv::Mat psi = (Rc1-Rc2)*pcb*dt23 + Rc1*Rcb*dp12*dt23 - (Rc2-Rc3)*pcb*dt12
+			    -Rc2*Rcb*dp23*dt12 - Rc1*Rcb*dv12*dt23*dt12 - 0.5*Rwi*GI*(dt12*dt12*dt23+dt12*dt23*dt23);
+	    
+	    lambda.copyTo(C.rowRange(3*i+0, 3*i+3).col(0));
+	    // 仅计算2列，第三列dtheta是0
+	    phi.colRange(0,2).copyTo(C.rowRange(3*i+0, 3*i+3).colRange(1, 3));
+	    zeta.copyTo(C.rowRange(3*i+0, 3*i+3).colRange(3, 6));
+	    psi.copyTo(D.rowRange(3*i+0, 3*i+3));
+	    
+	}
+	
+	cv::Mat w2, u2, vt2;
+	cv::SVDecomp(C, w2, u2, vt2, cv::SVD::MODIFY_A);
+	
+	cv::Mat w2inv = cv::Mat::eye(6,6,CV_32F);
+	for(int i=0; i<6; i++)
+	{
+	    if(fabs(w2.at<float>(i))<1e-10)
+	    {
+		w2.at<float>(i) += 1e-10;
+		cerr<<"w2(i) < 1e-10, w="<<endl<<w2<<endl;
+	    }
+	    
+	    w2inv.at<float>(i,i) = 1./w2.at<float>(i);
+	}
+	
+	cv::Mat y = vt2.t()*w2inv*u2.t()*D;
+	
+	double s_ = y.at<float>(0);
+	cv::Mat dthetaxy = y.rowRange(1,3);
+	cv::Mat dbiasa_ = y.rowRange(3,6);
+	Vector3d dbiasa_eig = Converter::toVector3d(dbiasa_);
+	
+	// dtheta = [dx, dy, 0]
+	cv::Mat dtheta = cv::Mat::zeros(3, 1, CV_32F);
+	dthetaxy.copyTo(dtheta.rowRange(0,2));
+	Eigen::Vector3d dthetaeig = Converter::toVector3d(dtheta);
+	
+	// Rwi_ = Rwi*exp(dtheta)
+	Eigen::Matrix3d Rwieig_ = RWIeig*Sophus::SO3::exp(dthetaeig).matrix();
+	cv::Mat Rwi_ = Converter::toCvMat(Rwieig_);
+	
+	
+	// test log
+	{
+	    
+	    cv::Mat gwbefore = Rwi*GI;
+	    cv::Mat gwafter = Rwi_*GI;
+	    cout<<"Time: "<<mpCurrentKeyFrame->mTimeStamp - mnStartTime<<", sstar: "<<sstar<<", s: "<<s_<<endl;
+	    
+	    fgw << mpCurrentKeyFrame->mTimeStamp << " "
+		<< gwafter.at<float>(0) << " " << gwafter.at<float>(1) << " " << gwafter.at<float>(2) << " "
+		<< gwbefore.at<float>(0) << " " << gwbefore.at<float>(1) << " " << gwbefore.at<float>(2) << " "
+		<< endl;
+		
+	    fscale << mpCurrentKeyFrame->mTimeStamp << " "
+		    <<s_<<" "<<sstar<<" "<<endl;
+	    
+	    fbiasa<<mpCurrentKeyFrame->mTimeStamp<<" " 
+		    <<dbiasa_.at<float>(0)<<" "<<dbiasa_.at<float>(1)<<" "<<dbiasa_.at<float>(2)<<" "<<endl;
+        
+	    fcondnum<<mpCurrentKeyFrame->mTimeStamp<<" "
+                <<w2.at<float>(0)<<" "<<w2.at<float>(1)<<" "<<w2.at<float>(2)<<" "<<w2.at<float>(3)<<" "
+                <<w2.at<float>(4)<<" "<<w2.at<float>(5)<<" "<<endl;
+		
+// 	    ftime<<mpCurrentKeyFrame->mTimeStamp<<" "
+// 		<<(t3-t0)/cv::getTickFrequency()*1000<<" "<<endl;
+	    
+	    fbiasg<<mpCurrentKeyFrame->mTimeStamp<<" "
+		<<bgest(0)<<" "<<bgest(1)<<" "<<bgest(2)<<" "<<endl;
+		
+	    ofstream fRwi(tmpfilepath+"Rwi.txt");
+	    fRwi<<Rwieig_(0,0)<<" "<<Rwieig_(0,1)<<" "<<Rwieig_(0,2)<<" "
+		<<Rwieig_(1,0)<<" "<<Rwieig_(1,1)<<" "<<Rwieig_(1,2)<<" "
+		<<Rwieig_(2,0)<<" "<<Rwieig_(2,1)<<" "<<Rwieig_(2,2)<<endl;
+	    fRwi.close();
+		
+	}
+	
+	// 提高初始化状态的可靠性
+	bool bVIOInited = false;
+	if(mbFirstTry)
+	{
+	    mbFirstTry = false;
+	    mnStartTime = mpCurrentKeyFrame->mTimeStamp;
+	}
+	
+	if(pNewestKF->mTimeStamp - mnStartTime >= ConfigParam::GetVINSInitTime())
+	{
+	    bVIOInited = true;
+	}
+	
+	if(bVIOInited)
+	{
+	    // 设置所有关键帧的Navstate, scale和bias
+	    double scale = s_;
+	    mnVINSInitScale = s_;
+	    // 世界坐标系下重力加速坐标系
+	    cv::Mat gw = Rwi_*GI;
+	    mGravityVec = gw.clone();
+	    Vector3d gweig = Converter::toVector3d(gw);
+	    mRwiInit = Rwi_.clone();
+	    
+	    // 更新关键帧NavState
+	    if(ConfigParam::GetRealTimeFlag())
+	    {
+		// 停止Local mapping
+		RequestStop();
+		
+		while(!isStopped() && !isFinished())
+		{
+		    usleep(1000);
+		}
+	    }
+	    
+	    SetUpdatingInitPoses(true);
+	    {
+		unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
+		
+		int cnt = 0;
+		for(vector<KeyFrame *>::const_iterator vit=vScaleGravityKF.begin(), vend=vScaleGravityKF.end(); vit!=vend; vit++, cnt++)
+		{
+		    KeyFrame *pKF = *vit;
+		    if(pKF->isBad())
+			continue;
+		    
+		    if(pKF!=vScaleGravityKF[cnt])
+			cerr<<"pKF!=vScaleGravityKF[cnt], id: "<<pKF->mnId<<" != "<<vScaleGravityKF[cnt]->mnId<<endl;
+		    
+		    // vslam PR
+		    cv::Mat wPc = pKF->GetPoseInverse().rowRange(0,3).col(3);
+		    cv::Mat Rwc = pKF->GetPoseInverse().rowRange(0,3).colRange(0,3);
+		    
+		    // 设置导航状态
+		    
+		    // P R
+		    cv::Mat wPb = scale*wPc + Rwc*pcb;
+		    pKF->SetNavStatePos(Converter::toVector3d(wPb));
+		    pKF->SetNavStateRot(Converter::toMatrix3d(Rwc*Rcb));
+		    
+		    // bias
+		    pKF->SetNavStateBiasGyr(bgest);
+		    pKF->SetNavStateBiasAcc(dbiasa_eig);
+		    // delta_bias只在优化中跟新，设置为0
+		    pKF->SetNavStateDeltaBg(Eigen::Vector3d::Zero());
+		    pKF->SetNavStateDeltaBa(Eigen::Vector3d::Zero());
+		    
+		    // 步骤4
+		    // 计算速度
+		    if(pKF != vScaleGravityKF.back())
+		    {
+			KeyFrame *pKFnext = pKF->GetNextKeyFrame();
+			if(!pKFnext)
+			    cerr<<"pKFnext is NULL, cnt="<<cnt<<", pKFnext:"<<pKFnext<<endl;
+			if(pKFnext!=vScaleGravityKF[cnt+1])
+			    cerr<<"pKFnext!=vScaleGravityKF[cnt+1], cnt="<<cnt<<", id: "<<pKFnext->mnId<<" != "<<vScaleGravityKF[cnt+1]->mnId<<endl;
+			
+			// IMU预积分
+			const IMUPreintegrator &imupreint = pKFnext->GetIMUPreInt();
+			double dt = imupreint.getDeltaTime();
+			cv::Mat dp = Converter::toCvMat(imupreint.getDeltaP());
+			cv::Mat Jpba = Converter::toCvMat(imupreint.getJPBiasa());
+			cv::Mat wPcnext = pKFnext->GetPoseInverse().rowRange(0,3).col(3);
+			cv::Mat Rwcnext = pKFnext->GetPoseInverse().rowRange(0,3).colRange(0,3);
+			
+			cv::Mat vel = -1./dt*(scale*(wPc-wPcnext) + (Rwc-Rwcnext)*pcb + Rwc*Rcb*(dp+Jpba*dbiasa_) + 0.5*gw*dt*dt);
+			Eigen::Vector3d veleig = Converter::toVector3d(vel);
+			pKF->SetNavStateVel(veleig);
+		    }
+		    else
+		    {
+			cerr<<"-----------here is the last KF in vScaleGravityKF------------"<<endl;
+			
+			KeyFrame *pKFprev = pKF->GetPrevKeyFrame();
+			if(!pKFprev)
+			    cerr<<"pKFprev is NULL, cnt="<<cnt<<endl;
+			
+			if(pKFprev!=vScaleGravityKF[cnt-1])
+			    cerr<<"pKFprev!=vScaleGravityKF[cnt-1], cnt="<<cnt<<", id: "<<pKFprev->mnId<<" != "<<vScaleGravityKF[cnt-1]->mnId<<endl;
+			
+			const IMUPreintegrator &imupreint_prev_cur = pKF->GetIMUPreInt();
+			double dt = imupreint_prev_cur.getDeltaTime();
+			Eigen::Matrix3d Jvba = imupreint_prev_cur.getJVBiasa();
+			Eigen::Vector3d dv = imupreint_prev_cur.getDeltaV();
+			
+			Eigen::Vector3d velpre = pKFprev->GetNavState().Get_V();
+			Eigen::Matrix3d rotpre = pKFprev->GetNavState().Get_RotMatrix();
+			Eigen::Vector3d veleig = velpre+gweig*dt+rotpre*(dv+Jvba*dbiasa_eig);
+			pKF->SetNavStateVel(veleig);
+		    }
+		}
+		
+		// 重新计算IMU预积分
+		for(vector<KeyFrame *>::const_iterator vit=vScaleGravityKF.begin(), vend=vScaleGravityKF.end(); vit!=vend; vit++)
+		{
+		    KeyFrame *pKF = *vit;
+		    if(pKF->isBad())
+			continue;
+		    pKF->ComputePreInt();
+		}
+		
+		// 更新位姿
+		vector<KeyFrame *> mspKeyFrames = mpMap->GetAllKeyFrames();
+		for(std::vector<KeyFrame *>::iterator sit=mspKeyFrames.begin(), send=mspKeyFrames.end(); sit!=send; sit++)
+		{
+		    KeyFrame *pKF = *sit;
+		    cv::Mat Tcw = pKF->GetPose();
+		    cv::Mat tcw = Tcw.rowRange(0,3).col(3)*scale;
+		    tcw.copyTo(Tcw.rowRange(0,3).col(3));    
+		    pKF->SetPose(Tcw);
+		}
+		
+		// 更新地图点
+		vector<MapPoint *> mspMapPoints = mpMap->GetAllMapPoints();
+		for(std::vector<MapPoint *>::iterator sit=mspMapPoints.begin(), send=mspMapPoints.end(); sit!=send; sit++)
+		{
+		    MapPoint *pMP = *sit;
+		    pMP->UpdateScale(scale);
+		}
+		std::cout<<std::endl<<"... Map scale updated ..."<<std::endl<<std::endl;
+		
+		// 更新NavState
+		if(pNewestKF!=mpCurrentKeyFrame)
+		{
+		    KeyFrame *pKF;
+		    
+		    // 更新bias
+		    pKF = pNewestKF;
+		    do
+		    {
+			pKF = pKF->GetNextKeyFrame();
+			
+			pKF->SetNavStateBiasGyr(bgest);
+			pKF->SetNavStateBiasAcc(dbiasa_eig);
+			
+			pKF->SetNavStateDeltaBg(Eigen::Vector3d::Zero());
+			pKF->SetNavStateDeltaBa(Eigen::Vector3d::Zero());
+			
+		    }while(pKF!=mpCurrentKeyFrame);
+		    
+		    // 计算预积分
+		    pKF = pNewestKF;
+		    do
+		    {
+			pKF = pKF->GetNextKeyFrame();
+			pKF->ComputePreInt();
+			
+		    }while(pKF!=mpCurrentKeyFrame);
+		    
+		    // 更新pose
+		    pKF = pNewestKF;
+		    do
+		    {
+			pKF = pKF->GetNextKeyFrame();
+			
+			cv::Mat wPc = pKF->GetPoseInverse().rowRange(0,3).col(3);
+			cv::Mat Rwc = pKF->GetPoseInverse().rowRange(0,3).colRange(0,3);
+			cv::Mat wPb = wPc + Rwc*pcb;
+			pKF->SetNavStatePos(Converter::toVector3d(wPb));
+			pKF->SetNavStateRot(Converter::toMatrix3d(Rwc*Rcb));
+			
+			if(pKF!=mpCurrentKeyFrame)
+			{
+			    KeyFrame *pKFnext = pKF->GetNextKeyFrame();
+			    const IMUPreintegrator &imupreint = pKFnext->GetIMUPreInt();
+			    double dt = imupreint.getDeltaTime();
+			    cv::Mat dp = Converter::toCvMat(imupreint.getDeltaP());
+			    cv::Mat Jpba = Converter::toCvMat(imupreint.getJPBiasa());
+				cv::Mat wPcnext = pKFnext->GetPoseInverse().rowRange(0,3).col(3);
+			    cv::Mat Rwcnext = pKFnext->GetPoseInverse().rowRange(0,3).colRange(0,3);
+			    
+			    cv::Mat vel = - 1./dt*( (wPc - wPcnext) + (Rwc - Rwcnext)*pcb + Rwc*Rcb*(dp + Jpba*dbiasa_) + 0.5*gw*dt*dt );
+			    Eigen::Vector3d veleig = Converter::toVector3d(vel);
+			    pKF->SetNavStateVel(veleig);  
+			}
+			else
+			{
+			    // If this is the last KeyFrame, no 'next' KeyFrame exists
+			    KeyFrame* pKFprev = pKF->GetPrevKeyFrame();
+			    const IMUPreintegrator& imupreint_prev_cur = pKF->GetIMUPreInt();
+			    double dt = imupreint_prev_cur.getDeltaTime();
+			    Eigen::Matrix3d Jvba = imupreint_prev_cur.getJVBiasa();
+			    Eigen::Vector3d dv = imupreint_prev_cur.getDeltaV();
+			    //
+			    Eigen::Vector3d velpre = pKFprev->GetNavState().Get_V();
+			    Eigen::Matrix3d rotpre = pKFprev->GetNavState().Get_RotMatrix();
+			    Eigen::Vector3d veleig = velpre + gweig*dt + rotpre*( dv + Jvba*dbiasa_eig );
+			    pKF->SetNavStateVel(veleig);
+			}
+			
+		    }while(pKF!=mpCurrentKeyFrame);
+		
+		}
+		std::cout<<std::endl<<"... Map NavState updated ..."<<std::endl<<std::endl;
+		SetFirstVINSInited(true);
+		SetVINSInited(true);
+	    }
+	    SetUpdatingInitPoses(false);
+	    
+	    if(ConfigParam::GetRealTimeFlag())
+	    {
+		Release();
+	    }
+	    
+	    // 初始化后运行GBA
+	    unsigned long nGBAKF = mpCurrentKeyFrame->mnId;
+	    Optimizer::GlobalBundleAdjustmentNavStatePRV(mpMap, mGravityVec, 10, NULL, nGBAKF, false);
+	    cerr<<"finish global BA after vins init"<<endl;
+	    
+	    // 更新
+	    if(ConfigParam::GetRealTimeFlag())
+	    {
+		
+		RequestStop();
+		
+		while(!isStopped() && !isFinished())
+		{
+		    usleep(1000);
+		}
+		
+		cv::Mat cvTbc = ConfigParam::GetMatTbc();
+		// 更新状态
+		{
+		    unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
+		    
+		    // 更新KF
+		    list<KeyFrame *> lpKFtoCheck(mpMap->mvpKeyFrameOrigins.begin(), mpMap->mvpKeyFrameOrigins.end());
+		    while(!lpKFtoCheck.empty())
+		    {
+			KeyFrame *pKF = lpKFtoCheck.front();
+			const set<KeyFrame *> sChilds = pKF->GetChilds();
+			cv::Mat Twc = pKF->GetPoseInverse();
+			
+			for(set<KeyFrame *>::const_iterator sit=sChilds.begin(); sit!=sChilds.end(); sit++)
+			{
+			    KeyFrame *pChild = *sit;
+			    if(pChild->mnBAGlobalForKF!=nGBAKF)
+			    {
+				cerr<<"correct KF after gBA in VI init: "<<pChild->mnId<<endl;
+				cv::Mat Tchildc = pChild->GetPose()*Twc;
+				pChild->mTcwGBA = Tchildc*pKF->mTcwGBA;//*Tcorc*pKF->mTcwGBA;
+				pChild->mnBAGlobalForKF=nGBAKF;
+				
+				// 更新导航状态
+				pChild->mNavStateGBA = pChild->GetNavState();
+				cv::Mat TwbGBA = Converter::toCvMatInverse(cvTbc*pChild->mTcwGBA);
+				Matrix3d RwbGBA = Converter::toMatrix3d(TwbGBA.rowRange(0,3).colRange(0,3));
+				Vector3d PwbGBA = Converter::toVector3d(TwbGBA.rowRange(0,3).col(3));
+				Matrix3d Rw1 = pChild->mNavStateGBA.Get_RotMatrix();
+				Vector3d Vw1 = pChild->mNavStateGBA.Get_V();
+				Vector3d Vw2 = RwbGBA*Rw1.transpose()*Vw1;   // bV1 = bV2 ==> Rwb1^T*wV1 = Rwb2^T*wV2 ==> wV2 = Rwb2*Rwb1^T*wV1
+				pChild->mNavStateGBA.Set_Pos(PwbGBA);
+				pChild->mNavStateGBA.Set_Rot(RwbGBA);
+				pChild->mNavStateGBA.Set_Vel(Vw2);
+			    }
+			    lpKFtoCheck.push_back(pChild);    
+			}
+			
+			pKF->mTcwBefGBA = pKF->GetPose();
+			pKF->mNavStateBefGBA = pKF->GetNavState();
+			pKF->SetNavState(pKF->mNavStateGBA);
+			pKF->UpdatePoseFromNS(cvTbc);
+			
+			lpKFtoCheck.pop_front();
+		    }
+		    
+		    // 更新MP
+		    const vector<MapPoint *> vpMPs = mpMap->GetAllMapPoints();
+		    for(size_t i=0; i<vpMPs.size(); i++)
+		    {
+			MapPoint *pMP = vpMPs[i];
+			
+			if(pMP->isBad())
+			    continue;
+			
+			if(pMP->mnBAGlobalForKF == nGBAKF)
+			{
+			    pMP->SetWorldPos(pMP->mPosGBA);
+			}
+			else
+			{
+			    // 根据参考KF位姿更新
+			    KeyFrame *pRefKF = pMP->GetReferenceKeyFrame();
+			    
+			    if(pRefKF->mnBAGlobalForKF!=nGBAKF)
+				continue;
+			    
+			    // 使用未矫正的位姿投影到相机坐标
+			    cv::Mat Rcw = pRefKF->mTcwBefGBA.rowRange(0,3).colRange(0,3);
+			    cv::Mat tcw = pRefKF->mTcwBefGBA.rowRange(0,3).col(3);
+			    cv::Mat Xc = Rcw*pMP->GetWorldPos()+tcw;
+			    
+			    // 使用矫正位姿投影到世界坐标
+			    cv::Mat Twc = pRefKF->GetPoseInverse();
+			    cv::Mat Rwc = Twc.rowRange(0,3).colRange(0,3);
+			    cv::Mat twc = Twc.rowRange(0,3).col(3);
+			    
+			    pMP->SetWorldPos(Rwc*Xc+twc);
+			}
+		    }
+		    
+		    cout << "Map updated!" << endl;
+		    
+		    // 设置地图更新标志
+		    SetMapUpdateFlagInTracking(true);
+		    
+		    Release();
+		}
+	    }
+	    
+	    SetFlagInitGBAFinish(true);
+	}
+	
+	for(int i=0; i<N; i++)
+	{
+	    if(vKFInit[i])
+		delete vKFInit[i];
+	}
+	
+	return bVIOInited;
+	
+    }
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    // 增加KF到local window
+    void LocalMapping::AddToLocalWindow(KeyFrame* pKF)
+    {
+        
+        mlLocalKeyFrames.push_back(pKF);
+        
+        if(mlLocalKeyFrames.size()>mnLocalWindowSize)
+        {
+            mlLocalKeyFrames.pop_front();
+        }
+        else
+        {
+            KeyFrame *pKF0 = mlLocalKeyFrames.front();
+            while(mlLocalKeyFrames.size()<mnLocalWindowSize && pKF0->GetPrevKeyFrame()!=NULL)
+            {
+                pKF0 = pKF0->GetPrevKeyFrame();
+                mlLocalKeyFrames.push_front(pKF0);
+            }
+        }
+        
+    }
+
+    
+    
+    // 删除LocalWindow中的坏KF
+    void LocalMapping::DeleteBadInLocalWindow(void)
+    {
+        std::list<KeyFrame *>::iterator lit = mlLocalKeyFrames.begin();
+        
+        while(lit!=mlLocalKeyFrames.end())
+        {
+            KeyFrame *pKF = *lit;
+            
+            // test log
+            if(!pKF)
+                cout<<"pKF null?"<<endl;
+            if(pKF->isBad())
+            {
+                lit = mlLocalKeyFrames.erase(lit);
+            }
+            else
+            {
+                lit++;
+            }
+        }
+        
+    }
+ 
+    
+    
+    /*********************************************************/
+    
     // 构造函数，成员变量初始化。
-    LocalMapping::LocalMapping( Map *pMap, const float bMonocular):
+    LocalMapping::LocalMapping( Map *pMap, const float bMonocular, ConfigParam *pParams):
         mbMonocular(bMonocular), mbResetRequested(false), mbFinishRequested(false), mbFinished(true), mpMap(pMap),
         mbAbortBA(false), mbStopped(false), mbStopRequested(false), mbNotStop(false), mbAcceptKeyFrames(true)
     {
+        mpParams = pParams;
+        mnLocalWindowSize = ConfigParam::GetLocalWindowSize();
+        cout<<"mnLocalWindowSize:"<<mnLocalWindowSize<<endl;
+        
+        mbVINSInited = false;
+        mbFirstTry = true;
+        mbFirstVINSInited = false;
+        
+        mbUpdatingInitPoses = false;
+        mbCopyInitKFs = false;
+        mbInitGBAFinish = false;
 
     }
 
@@ -83,8 +993,33 @@ namespace ORB_SLAM2
                 {
                     // 步骤4 局部BA
                     if(mpMap->KeyFramesInMap()>2)
-                        Optimizer::LocalBundleAdjustment(mpCurrentKeyFrame, &mbAbortBA, mpMap);
-
+		    {
+			if(!GetVINSInited())
+			{
+			    Optimizer::LocalBundleAdjustment(mpCurrentKeyFrame, &mbAbortBA, mpMap, this);
+			}
+			else
+			{
+			    Optimizer::LocalBAPRVIDP(mpCurrentKeyFrame, mlLocalKeyFrames, &mbAbortBA, mpMap, mGravityVec, this);
+			}
+			
+		    }
+		    
+		    // 非实时模式
+		    if(!ConfigParam::GetRealTimeFlag())
+		    {
+			if(!GetVINSInited())
+			{
+			    bool tmpbool = TryInitVIO();
+			    SetVINSInited(tmpbool);
+			    if(tmpbool)
+			    {
+				mpMap->UpdateScale(mnVINSInitScale);
+				SetFirstVINSInited(true);
+			    }
+			}
+		    }
+		    
                     // 步骤5 剔除冗余关键帧。某关键帧90%的点云被其他关键帧观测，剔除。
                     // Tracking 线程通过InsertKeyFrame函数添加的条件宽松，KF会比较多，便于跟踪。
                     // 在这个删除冗余关键帧。
@@ -92,7 +1027,8 @@ namespace ORB_SLAM2
                 }
 
                 // 将当前关键帧加入闭环检测队列。
-                mpLoopCloser->InsertKeyFrame(mpCurrentKeyFrame);
+                if(GetFlagInitGBAFinish())
+		    mpLoopCloser->InsertKeyFrame(mpCurrentKeyFrame);
 
             }   // 当前关键帧队列不为空。
 
@@ -207,6 +1143,12 @@ namespace ORB_SLAM2
         // 步骤4 更新关键帧间的连接关系，Convisible图和Essential图(tree)
         mpCurrentKeyFrame->UpdateConnections();
         
+	// 删除Local window中的bad KF
+	DeleteBadInLocalWindow();
+	
+	// 添加CKF到Local window中
+	AddToLocalWindow(mpCurrentKeyFrame);
+	
         // 步骤5 将关键帧插入到地图中。
         mpMap->AddKeyFrame(mpCurrentKeyFrame);
 
@@ -804,9 +1746,33 @@ namespace ORB_SLAM2
    // 在Covisiblity图中的关键帧，其中90%以上的MapPoints能被其他至少3个尺度更好的关键帧观测到，则认为冗余，剔除。
    void LocalMapping::KeyFrameCulling()
    {
+       
+       if(ConfigParam::GetRealTimeFlag())
+       {
+	   if(GetFlagCopyInitKFs())
+	       return;
+       }
+       SetFlagCopyInitKFs(true);
+       
        // 步骤1 根据Covisiblity图提取当前帧的共视关键帧。
        vector<KeyFrame *> vpLocalKeyFrames = mpCurrentKeyFrame->GetVectorCovisibleKeyFrames();
-
+       
+       KeyFrame *pOldestLocalKF = mlLocalKeyFrames.front();
+       KeyFrame *pPrevLocalKF = pOldestLocalKF->GetPrevKeyFrame();
+       KeyFrame *pNewestLocalKF = mlLocalKeyFrames.back();
+       
+       // test log
+       if(pOldestLocalKF->isBad()) 
+	   cerr<<"pOldestLocalKF is bad, check 1. id: "<<pOldestLocalKF->mnId<<endl;
+       
+       if(pPrevLocalKF) 
+	   if(pPrevLocalKF->isBad()) 
+	       cerr<<"pPrevLocalKF is bad, check 1. id: "<<pPrevLocalKF->mnId<<endl;
+	   
+       if(pNewestLocalKF->isBad()) 
+	   cerr<<"pNewestLocalKF is bad, check 1. id: "<<pNewestLocalKF->mnId<<endl;
+       
+       
        // 遍历局部关键帧。
        for(vector<KeyFrame *>::iterator vit=vpLocalKeyFrames.begin(), vend=vpLocalKeyFrames.end(); vit!=vend; vit++)
        {
@@ -814,10 +1780,39 @@ namespace ORB_SLAM2
            if(pKF->mnId==0)
                continue;
            
-           // 步骤2 提取每个共视关键帧的MapPoints。
+           // 不剔除pOldestLocalKF和它的前帧
+	   if(pKF==pOldestLocalKF || pKF == pPrevLocalKF)
+	       continue;
+	   
+	   // 检查两帧之间时间间隔，小于0.5不剔除
+	   KeyFrame *pPrevKF = pKF->GetPrevKeyFrame();
+	   KeyFrame *pNextKF = pKF->GetNextKeyFrame();
+	   if(pPrevKF && pNextKF && !GetVINSInited())
+	   {
+	       if(fabs(pNextKF->mTimeStamp - pPrevKF->mTimeStamp) > 0.5)
+		   continue;
+	   }
+	   
+	   // 保证当前关键帧的前帧不被剔除
+	   if(pKF->GetNextKeyFrame() == mpCurrentKeyFrame)
+	       continue;
+	   if(pKF->mTimeStamp >= mpCurrentKeyFrame->mTimeStamp - 0.11)
+	       continue;
+	   
+	   if(pPrevKF && pNextKF)
+	   {
+	       double timegap = 0.51;
+	       if(GetVINSInited() && pKF->mTimeStamp < mpCurrentKeyFrame->mTimeStamp -4.0)
+		   timegap = 3.01;
+	       
+	       if(fabs(pNextKF->mTimeStamp - pPrevKF->mTimeStamp) > timegap)
+		   continue;
+	   }
+	   
+	   // 步骤2 提取每个共视关键帧的MapPoints。
            const vector<MapPoint *> vpMapPoints = pKF->GetMapPointMatches();
 
-		   // 设置阈值。
+	   // 设置阈值。
            int nObs = 2;
            if(mbMonocular)
                nObs = 3;
@@ -846,12 +1841,12 @@ namespace ORB_SLAM2
                        if(pMP->Observations() > thObs)
                        {
                            const int &scaleLevel = pKF->mvKeysUn[i].octave;
-                           const map<KeyFrame *, size_t> observations = pMP->GetObservations();
+                           const mapMapPointObs/*map<KeyFrame *, size_t>*/ observations = pMP->GetObservations();
                            // 判断该MapPoint是否同时被三个尺度更好关键帧观测到。
                            int nObs=0;
 
                            // 遍历所有观测到MP的关键帧。
-                           for(map<KeyFrame *, size_t>::const_iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
+                           for(mapMapPointObs/*map<KeyFrame *, size_t>*/::const_iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
                            {
                                KeyFrame *pKFi = mit->first;
                                if(pKFi==pKF)
@@ -883,6 +1878,7 @@ namespace ORB_SLAM2
                pKF->SetBadFlag();
        }    // 遍历共视局部关键帧。
 
+       SetFlagCopyInitKFs(false);
    }
 
 
@@ -930,6 +1926,12 @@ namespace ORB_SLAM2
            mlNewKeyFrames.clear();
            mlpRecentAddedMapPoints.clear();
            mbResetRequested=false;
+	   
+	   mlLocalKeyFrames.clear();
+	   
+	   // 增加VI初始化
+	   mbVINSInited = false;
+	   mbFirstTry = true;
        }
    }
 

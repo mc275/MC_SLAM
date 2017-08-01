@@ -23,6 +23,8 @@
 #include <mutex>
 
 
+#define TRACK_WITH_IMU
+
 using namespace std;
 
 // "m"表示类中的成员变量
@@ -36,14 +38,485 @@ using namespace std;
 
 namespace ORB_SLAM2
 {
+    
+    
+    
+    /************************vSLAM*********************************/
+    
+    // 计算IMU偏移
+    void Tracking::RecomputeIMUBiasAndCurrentNavstate(NavState& nscur)
+    {
+	size_t N = mv20FramesReloc.size();
+	
+	// test log
+	if(N!=20)
+	    cerr<<"Frame vector size not 20 to compute bias after reloc??? size: "<<mv20FramesReloc.size()<<endl;
+	
+	// 估计gyr偏移
+	Vector3d bg = Optimizer::OptimizeInitialGyroBias(mv20FramesReloc);
+	
+	for(size_t i=0; i<N; i++)
+	{
+	    Frame &frame = mv20FramesReloc[i];
+	   
+	    // test log
+	    if(frame.GetNavState().Get_BiasGyr().norm()!=0 || frame.GetNavState().Get_dBias_Gyr().norm()!=0)
+		 cerr<<"Frame "<<frame.mnId<<" gyr bias or delta bias not zero???"<<endl;
+	    
+	    frame.SetNavStateBiasGyr(bg);
+	}
+	
+	// 重新计算预积分
+	vector<IMUPreintegrator> v19IMUPreint;
+	v19IMUPreint.reserve(19);
+	for(size_t i=0; i<N; i++)
+	{
+	    if(i==0)
+		continue;
+	    
+	    const Frame &Fi = mv20FramesReloc[i-1];
+	    const Frame &Fj = mv20FramesReloc[i];
+	    
+	    IMUPreintegrator imupreint;
+	    Fj.ComputeIMUPreIntSinceLastFrame(&Fi, imupreint);
+	    v19IMUPreint.push_back(imupreint);
+	}
+	
+	// 构建方程 [A1;A2;...;AN]*ba = [B1;B2;../BN]
+	cv::Mat A = cv::Mat::zeros(3*(N-2), 3, CV_32F);
+	cv::Mat B = cv::Mat::zeros(3*(N-2), 1, CV_32F);
+	
+	const cv::Mat &gw = mpLocalMapper->GetGravityVec();
+	const cv::Mat &Tcb = ConfigParam::GetMatT_cb();
+	
+	for(int i=0; i<N-2; i++)
+	{
+	    const Frame &F1 = mv20FramesReloc[i];
+	    const Frame &F2 = mv20FramesReloc[i+1];
+	    const Frame &F3 = mv20FramesReloc[i+2];
+	    
+	    const IMUPreintegrator &PreInt12 = v19IMUPreint[i];
+	    const IMUPreintegrator &PreInt23 = v19IMUPreint[i+1];
+	    
+	    // 帧间时间差
+	    double dt12 = PreInt12.getDeltaTime();
+	    double dt23 = PreInt23.getDeltaTime();
+	    
+	    // 预积分测量值
+	    cv::Mat dp12 = Converter::toCvMat(PreInt12.getDeltaP());
+	    cv::Mat dv12 = Converter::toCvMat(PreInt12.getDeltaV());
+	    cv::Mat dp23 = Converter::toCvMat(PreInt23.getDeltaP());
+	    cv::Mat Jpba12 = Converter::toCvMat(PreInt12.getJPBiasa());
+	    cv::Mat Jvba12 = Converter::toCvMat(PreInt12.getJVBiasa());
+	    cv::Mat Jpba23 = Converter::toCvMat(PreInt23.getJPBiasa());
+	    
+	    // 导航状态世界坐标系位姿
+	    cv::Mat Twb1 = Converter::toCvMatInverse(F1.mTcw)*Tcb;
+	    cv::Mat Twb2 = Converter::toCvMatInverse(F2.mTcw)*Tcb;
+	    cv::Mat Twb3 = Converter::toCvMatInverse(F3.mTcw)*Tcb;
+	    
+	    // 导航状态世界坐标系位置
+	    cv::Mat pb1 = Twb1.rowRange(0,3).col(3);
+	    cv::Mat pb2 = Twb2.rowRange(0,3).col(3);
+	    cv::Mat pb3 = Twb3.rowRange(0,3).col(3);
+	    
+	    // 导航状态世界坐标系姿态
+	    cv::Mat Rb1 = Twb1.rowRange(0,3).colRange(0,3);
+	    cv::Mat Rb2 = Twb2.rowRange(0,3).colRange(0,3);
+	    
+	    cv::Mat Ai = Rb1*Jpba12*dt23 - Rb2*Jpba23*dt12 - Rb1*Jvba12*dt12*dt23;
+	    cv::Mat Bi = (pb2-pb3)*dt12 + (pb2-pb1)*dt23 + Rb2*dp23*dt12 - Rb1*dp12*dt23 + Rb1*dv12*dt12*dt23 + 0.5*gw*(dt12*dt12*dt23+dt12*dt23*dt23);
+	    Ai.copyTo(A.rowRange(3*i+0, 3*i+3));
+	    Bi.copyTo(B.rowRange(3*i+0, 3*i+3));
+	    
+	    if(fabs(F2.mTimeStamp-F1.mTimeStamp-dt12)>1e-6 || fabs(F3.mTimeStamp-F2.mTimeStamp-dt23)>1e-6) 
+		cerr<<"delta time not right."<<endl;
+	    
+	}
+	
+	// 使用SVD计算 A*x=B, x=ba 3x1 vector
+	// A = u*w*vt, u*w*vt*x=B
+	// x = vt'*winv*u'*B
+	cv::Mat w2, u2, vt2;
+	cv::SVDecomp(A, w2, u2, vt2, cv::SVD::MODIFY_A);
+	
+	cv::Mat w2inv = cv::Mat::eye(3,3,CV_32F);
+	for(int i=0; i<3; i++)
+	{
+	    if(fabs(w2.at<float>(i))<1e-10)
+	    {
+		w2.at<float>(i) += 1e-10;
+		cerr<<"w2(i) < 1e-10, w="<<endl<<w2<<endl;
+	    }
+	    
+	    w2inv.at<float>(i,i) = 1./w2.at<float>(i);
+	}
+	
+	cv::Mat ba_cv = vt2.t()*w2inv*u2.t()*B;
+	Vector3d ba = Converter::toVector3d(ba_cv);
+	
+	// 更新Acc Bias
+	for(size_t i=0; i<N; i++)
+	{
+	    Frame &frame = mv20FramesReloc[i];
+	    
+	    if(frame.GetNavState().Get_BiasAcc().norm()!=0 || frame.GetNavState().Get_dBias_Gyr().norm()!=0 || frame.GetNavState().Get_dBias_Acc().norm()!=0)
+		cerr<<"Frame "<<frame.mnId<<" acc bias or delta bias not zero???"<<endl;
+	    
+	    frame.SetNavStateBiasAcc(ba);
+	}
+	
+	
+	Vector3d Pcur;
+	Vector3d Vcur;
+	Matrix3d Rcur;
+	// 计算最后两帧的速度
+	{
+	    Frame &F1 = mv20FramesReloc[N-2];
+	    Frame &F2 = mv20FramesReloc[N-1];
+	    
+	    const IMUPreintegrator &imupreint = v19IMUPreint.back();
+	    const double dt12 = imupreint.getDeltaTime();
+	    const Vector3d dp12 = imupreint.getDeltaP();
+	    const Vector3d gweig = Converter::toVector3d(gw);
+	    const Matrix3d Jpba12 = imupreint.getJPBiasa();
+	    const Vector3d dv12 = imupreint.getDeltaV();
+	    const Matrix3d Jvba12 = imupreint.getJVBiasa();
+	    
+	    // 前一帧的速度
+	    // P2 = P1 + V1*dt12 + 0.5*gw*dt12*dt12 + R1*(dP12 + Jpba*ba + Jpbg*0)
+	    cv::Mat Twb1 = Converter::toCvMatInverse(F1.mTcw)*Tcb;
+	    cv::Mat Twb2 = Converter::toCvMatInverse(F2.mTcw)*Tcb;
+	    Vector3d P1 = Converter::toVector3d(Twb1.rowRange(0,3).col(3));
+	    Pcur = Converter::toVector3d(Twb2.rowRange(0,3).col(3));
+	    Matrix3d R1 = Converter::toMatrix3d(Twb1.rowRange(0,3).colRange(0,3));
+	    Rcur = Converter::toMatrix3d(Twb2.rowRange(0,3).colRange(0,3));
+	    Vector3d V1 = 1./dt12*(Pcur-P1-0.5*gweig*dt12*dt12-R1*(dp12+Jpba12*ba));
+	    
+	    // 当前帧速度
+	    Vcur = V1 + gweig*dt12 + R1*(dv12+Jvba12*ba);
+	    
+	    // test log
+	    if(F2.mnId != mCurrentFrame.mnId)
+		cerr<<"framecur.mnId != mCurrentFrame.mnId. why??"<<endl;
+	    if(fabs(F2.mTimeStamp-F1.mTimeStamp-dt12)>1e-6)
+		cerr<<"timestamp not right?? in compute vel"<<endl;
+	}
+	
+	// 设置CF的导航状态
+	nscur.Set_Pos(Pcur);
+	nscur.Set_Vel(Vcur);
+	nscur.Set_Rot(Rcur);
+	nscur.Set_BiasGyr(bg);
+	nscur.Set_BiasAcc(ba);
+	nscur.Set_DeltaBiasGyr(Vector3d::Zero());
+	nscur.Set_DeltaBiasAcc(Vector3d::Zero());
+	
+    }
+    
+    
+    
+    bool Tracking::TrackLocalMapWithIMU(bool bMapUpdated)
+    {
+	
+	// 通过Track frame的地图点得到估计位姿
+	// 提取局部地图，进行匹配
+	
+	UpdateLocalMap();
+	
+	SearchLocalPoints();
+	
+	// Local Map更新，优化KF
+	if(mpLocalMapper->GetFirstVINSInited() || bMapUpdated)
+	{
+	    IMUPreintegrator imupreint = GetIMUPreIntSinceLastKF(&mCurrentFrame, mpLastKeyFrame, mvIMUSinceLastKF);
+	    
+	    // test log
+	    if(mCurrentFrame.GetNavState().Get_dBias_Acc().norm() > 1e-6) 
+		cerr<<"TrackLocalMapWithIMU current Frame dBias acc not zero"<<endl;
+	    
+	    if(mCurrentFrame.GetNavState().Get_dBias_Gyr().norm() > 1e-6) 
+		cerr<<"TrackLocalMapWithIMU current Frame dBias gyr not zero"<<endl;
+	    
+	    Optimizer::PoseOptimization(&mCurrentFrame, mpLastKeyFrame, imupreint, mpLocalMapper->GetGravityVec(), true);
+	}
+	// 地图没有更新，和上一帧优化
+	else
+	{
+	    IMUPreintegrator imupreint = GetIMUPreIntSinceLastFrame(&mCurrentFrame, &mLastFrame);
+	    Optimizer::PoseOptimization(&mCurrentFrame, &mLastFrame, imupreint, mpLocalMapper->GetGravityVec(), true);
+	}
+	
+	mnMatchesInliers = 0;
+	// 更新CF的地图点云
+	for(int i=0; i<mCurrentFrame.N; i++)
+	{
+	    if(mCurrentFrame.mvpMapPoints[i])
+	    {
+		if(!mCurrentFrame.mvbOutlier[i])
+		{
+		    mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
+		    
+		    if(!mbOnlyTracking)
+		    {
+			if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
+			    mnMatchesInliers++;
+		    }
+		    else
+			mnMatchesInliers++;   
+		}
+		else if(mSensor==System::STEREO)
+		    mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(NULL);
+		
+	    }
+	}
+	
+	if(mCurrentFrame.mnId < mnLastRelocFrameId+mMaxFrames && mnMatchesInliers<50)
+	    return false;
+	
+	if(mnMatchesInliers < 6 /*30*/)
+	    return false;
+	
+	else
+	    return true;
+	
+    }
+
+    
+    // 根据IMU预测CF导航状态
+    void Tracking::PredictNavStateByIMU(bool bMapUpdated)
+    {
+	if(!mpLocalMapper->GetVINSInited())
+	    cerr<<"mpLocalMapper->GetVINSInited() not, shouldn't in PredictNavStateByIMU"<<endl;
+	
+	// 地图更新，lastKF优化
+	if(mpLocalMapper->GetFirstVINSInited() || bMapUpdated)
+	{
+	    // 计算预积分
+	    mIMUPreIntInTrack = GetIMUPreIntSinceLastKF(&mCurrentFrame, mpLastKeyFrame, mvIMUSinceLastKF);
+	    
+	    mCurrentFrame.SetInitialNavStateAndBias(mpLastKeyFrame->GetNavState());
+	    mCurrentFrame.UpdateNavState(mIMUPreIntInTrack, Converter::toVector3d(mpLocalMapper->GetGravityVec()));
+	    mCurrentFrame.UpdatePoseFromNS(ConfigParam::GetMatTbc());
+	    
+	    // test log
+	    if(mCurrentFrame.GetNavState().Get_dBias_Acc().norm() > 1e-6)
+		cerr<<"PredictNavStateByIMU1 current Frame dBias acc not zero"<<endl;
+	    if(mCurrentFrame.GetNavState().Get_dBias_Gyr().norm() > 1e-6)
+		cerr<<"PredictNavStateByIMU1 current Frame dBias gyr not zero"<<endl;
+		
+	}
+	else
+	{
+	    // 计算预积分
+	    mIMUPreIntInTrack = GetIMUPreIntSinceLastFrame(&mCurrentFrame, &mLastFrame);
+	    
+	    // 从上一帧关键帧获取初始状态
+	    mCurrentFrame.SetInitialNavStateAndBias(mLastFrame.GetNavState());
+	    mCurrentFrame.UpdateNavState(mIMUPreIntInTrack, Converter::toVector3d(mpLocalMapper->GetGravityVec()));
+	    mCurrentFrame.UpdatePoseFromNS(ConfigParam::GetMatTbc());
+	    
+	    // test log
+	    if(mCurrentFrame.GetNavState().Get_dBias_Acc().norm() > 1e-6) 
+		cerr<<"PredictNavStateByIMU2 current Frame dBias acc not zero"<<endl;
+	    if(mCurrentFrame.GetNavState().Get_dBias_Gyr().norm() > 1e-6) 
+		cerr<<"PredictNavStateByIMU2 current Frame dBias gyr not zero"<<endl;
+	    
+	}    
+	    
+    }
+    
+    
+    
+    // 类似Trackwitmotionmodel
+    bool Tracking::TrackWithIMU(bool bMapUpdated)
+    {
+	ORBmatcher matcher(0.9,true);
+	
+	// IMU初始化后进行Track
+	if(!mpLocalMapper->GetVINSInited())
+	    cerr<<"local mapping VINS not inited. why call TrackWithIMU?"<<endl;
+	
+	PredictNavStateByIMU(bMapUpdated);
+	
+	fill(mCurrentFrame.mvpMapPoints.begin(), mCurrentFrame.mvpMapPoints.end(), static_cast<MapPoint *>(NULL));
+	
+	int th;
+	if(mSensor!=System::STEREO)
+	    th = 15;
+	else
+	    th = 7;
+	
+	int nmatches = matcher.SearchByProjection(mCurrentFrame, mLastFrame, th, mSensor==System::MONOCULAR);
+	
+	// 匹配太少，使用更宽的窗口匹配
+	if(nmatches < 20)
+	{
+	    fill(mCurrentFrame.mvpMapPoints.begin(), mCurrentFrame.mvpMapPoints.end(), static_cast<MapPoint *>(NULL));
+	    nmatches = matcher.SearchByProjection(mCurrentFrame, mLastFrame, 2*th, mSensor==System::MONOCULAR);
+	}
+	
+	if(nmatches < /*20*/10)
+	    return false;
+	
+	if(mpLocalMapper->GetFirstVINSInited() || bMapUpdated)
+	{
+	    Optimizer::PoseOptimization(&mCurrentFrame, mpLastKeyFrame, mIMUPreIntInTrack, mpLocalMapper->GetGravityVec(), false);
+	}
+	else
+	{
+	    Optimizer::PoseOptimization(&mCurrentFrame, &mLastFrame, mIMUPreIntInTrack, mpLocalMapper->GetGravityVec(), false);
+	}
+
+	
+	int nmatchesMap = 0;
+	for(int i=0; i<mCurrentFrame.N; i++)
+	{
+	    if(mCurrentFrame.mvpMapPoints[i])
+	    {
+		if(mCurrentFrame.mvbOutlier[i])
+		{
+		    MapPoint *pMP = mCurrentFrame.mvpMapPoints[i];
+		    
+		    mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(NULL);
+		    mCurrentFrame.mvbOutlier[i] = false;
+		    pMP->mbTrackInView = false;
+		    pMP->mnLastFrameSeen = mCurrentFrame.mnId;
+		    nmatches--;
+		}
+		else if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
+		    nmatchesMap++;
+	    }
+	    
+	}
+	
+	if(mbOnlyTracking)
+	{
+	    mbVO = nmatchesMap < 10;
+	    return nmatches > 20;
+	}
+	
+	return nmatchesMap >= /*10*/ 6;
+	
+    }
+    
+    
+    
+    // CF-LastKF IMU预积分
+    IMUPreintegrator Tracking::GetIMUPreIntSinceLastKF(Frame* pCurF, KeyFrame* pLastKF, const std::vector< IMUData >& vIMUSInceLastKF)
+    {
+	// 重置IMU预积分
+	IMUPreintegrator IMUPreInt;
+	IMUPreInt.reset();
+	
+	Vector3d bg = pLastKF->GetNavState().Get_BiasGyr();
+	Vector3d ba = pLastKF->GetNavState().Get_BiasAcc();
+	
+	// LastKF到第一个IMU数据的预积分
+	{
+	    const IMUData &imu = vIMUSInceLastKF.front();
+	    double dt = imu._t - pLastKF->mTimeStamp;
+	    IMUPreInt.update(imu._g-bg, imu._a-ba, dt);
+	    
+	    // test log
+	    if(dt<0)
+	    {
+		cerr<<std::fixed<<std::setprecision(3)<<"dt = "<<dt<<", this KF vs last imu time: "<<pLastKF->mTimeStamp<<" vs "<<imu._t<<endl;
+		std::cerr.unsetf ( std::ios::showbase );                // deactivate showbase
+	    }
+	    
+	}
+	
+	for(size_t i=0; i<vIMUSInceLastKF.size(); i++)
+	{
+	    const IMUData &imu = vIMUSInceLastKF[i];
+	    double nextt;
+	    if(i==vIMUSInceLastKF.size()-1)
+		nextt = pCurF->mTimeStamp;
+	    else
+		nextt = vIMUSInceLastKF[i+1]._t;
+	    
+	    double dt=nextt-imu._t;
+	    
+	    // 预积分
+	    IMUPreInt.update(imu._g-bg, imu._a-ba, dt);
+	    
+	    
+	    // test log
+	    if(dt <= 0)
+	    {
+		cerr<<std::fixed<<std::setprecision(3)<<"dt = "<<dt<<", this vs next time: "<<imu._t<<" vs "<<nextt<<endl;
+		std::cerr.unsetf ( std::ios::showbase );                // deactivate showbase
+	    }
+	    
+	}
+	
+	return IMUPreInt;
+	
+    }
+    
+    
+    
+    // LastF-CKF 预积分
+    IMUPreintegrator Tracking::GetIMUPreIntSinceLastFrame(Frame* pCurF, Frame* pLastF)
+    {
+	// 重置IMU预积分值
+	IMUPreintegrator IMUPreInt;
+	IMUPreInt.reset();
+	
+	pCurF->ComputeIMUPreIntSinceLastFrame(pLastF, IMUPreInt);
+	
+	return IMUPreInt;
+    }
+    
+    
+    
+    // 
+    cv::Mat Tracking::GrabImageMonoVI(const cv::Mat& im, const std::vector< IMUData >& vimu, const double& timestamp)
+    {
+	mvIMUSinceLastKF.insert(mvIMUSinceLastKF.end(), vimu.begin(), vimu.end());
+	mImGray = im;
+	
+	if(mImGray.channels() == 3)
+	{
+	    if(mbRGB)
+		cvtColor(mImGray, mImGray, CV_RGB2GRAY);
+	    else
+		cvtColor(mImGray, mImGray, CV_BGR2GRAY);
+	}
+	else if(mImGray.channels() == 4)
+	{
+	    if(mbRGB)
+		cvtColor(mImGray, mImGray, CV_RGBA2GRAY);
+	    else
+		cvtColor(mImGray, mImGray, CV_BGRA2GRAY);
+	}
+	
+	if(mState == NOT_INITIALIZED || mState == NO_IMAGES_YET)
+	    mCurrentFrame = Frame(mImGray, timestamp, vimu, mpIniORBextractor, mpORBVocabulary, mK, mDistCoef, mbf, mThDepth);
+	else
+	    mCurrentFrame = Frame(mImGray, timestamp, vimu, mpORBextractorLeft, mpORBVocabulary,mK, mDistCoef, mbf, mThDepth, mpLastKeyFrame);
+	
+	Track();
+	
+	return mCurrentFrame.mTcw.clone();
+	
+    }
+
+
+    
+    /**********************************************************/
 
     // 构造函数,初始化类型，传递参数。
     Tracking::Tracking(System *pSys, ORBVocabulary *pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Map *pMap,  KeyFrameDatabase *pKFDB, 
-            const string &strSettingPath, const int sensor): 
+            const string &strSettingPath, const int sensor, ConfigParam *pParams): 
             mState(NO_IMAGES_YET), mSensor(sensor), mbOnlyTracking(false), mbVO(false), mpORBVocabulary(pVoc), 
             mpKeyFrameDB(pKFDB), mpInitializer(static_cast<Initializer *>(NULL)), mpSystem(pSys),
             mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpMap(pMap), mnLastRelocFrameId(0)
     {
+	mbCreateNewKFAfterReloc = false;
+	mbRelocBiasPrepare = false;
+	mpParams = pParams;
         
         // 加载相机标定参数。
         cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
@@ -303,7 +776,7 @@ namespace ORB_SLAM2
 
 
 
-
+    // 66666，修改
     // Tracking线程的主函数，Track(), 独立于输入传感器类型，单目，双目，RGBD都用这个进行跟踪。
     // track()完成两个部分  运动估计和局部地图跟踪。
     // track()：a.初始化(Initial)。b.状态正常跟踪，丢失则重定位，PnP得到初始位姿；局部地图跟踪；检测是否插入新的关键帧。c.记录位姿信息。
@@ -324,9 +797,24 @@ namespace ORB_SLAM2
         mLastProcessedState=mState;
         
         // 进入Map mutex(对象互斥锁)，保持当前地图不变。
-        unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
-
-
+	unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
+	
+	// 根据地图是否更新
+	bool bMapUpdated  = false;
+	if(mpLocalMapper->GetMapUpdateFlagForTracking())
+	{
+	    bMapUpdated = true;
+	    mpLocalMapper->SetMapUpdateFlagInTracking(false);
+	}
+	if(mpLoopClosing->GetMapUpdateFlagForTracking())
+	{
+	    bMapUpdated = true;
+	    mpLoopClosing->SetMapUpdateFlagInTracking(false);
+	}
+	if(mCurrentFrame.mnId == mnLastRelocFrameId + 20)
+	{
+	    bMapUpdated = true;
+	}
 
         // 步骤1 初始化，判断使用单应还是基本矩阵，计算两帧间相对位姿，三角原理初始化一组点云。2D-2D,3D-2D
         if(mState == NOT_INITIALIZED)
@@ -364,31 +852,54 @@ namespace ORB_SLAM2
                     // 检查并更新上一帧被替换的MapPoints
                     // 更新Fuse函数和SearchAndFuse函数替换的MapPoints
                     CheckReplacedInLastFrame();
+#ifdef TRACK_WITH_IMU
 
-
-                    // 步骤2.1 跟踪上一帧或参考关键帧或者重定位帧。
-                    // 运动模式为空或刚刚完成重定位。
-                    // mnLastRelocFrameId表示上次重定位的那一帧。
-                    if(mVelocity.empty() || mCurrentFrame.mnId<mnLastRelocFrameId+2)
-                    {
-                        // 上一帧的位姿作为当前帧的初始化位姿。
-                        // 通过BoW的方式在当前帧中找到参考帧特征点的匹配点。
-                        // 最小化3D点的重投影误差得到位姿。
-                        bOK = TrackReferenceKeyFrame();
-                    }
-
-                    else
-                    {
-                        // 根据恒速模型设定当前帧的初始位姿。
-                        // 通过投影的方式在当前帧中找到参考帧的匹配点。
-                        // 最小化3D重投影误差得到位姿。
-                        bOK = TrackWithMotionModel();
-
-                        // 没有跟踪成功时，跟踪参考帧，BoW加速匹配跟踪。
-                        if(!bOK)
-                            bOK = TrackReferenceKeyFrame();
-                        
-                    }
+		    // 完成VI初始化
+		    if(mpLocalMapper->GetVINSInited())
+		    {
+			
+			//刚刚完成重定位
+			if(mbRelocBiasPrepare)
+			{
+			    bOK = TrackReferenceKeyFrame();
+			}
+			else
+			{
+			    bOK = TrackWithIMU(bMapUpdated);
+			    if(!bOK)
+				bOK = TrackReferenceKeyFrame();
+			}
+			
+		    }
+		    // 没有完成VI初始化, 纯视觉SLAM
+		    else
+#endif 
+		    {
+			
+			// 步骤2.1 跟踪上一帧或参考关键帧或者重定位帧。
+			// 运动模式为空或刚刚完成重定位。
+			// mnLastRelocFrameId表示上次重定位的那一帧。
+			if(mVelocity.empty() || mCurrentFrame.mnId<mnLastRelocFrameId+2)
+			{
+			    // 上一帧的位姿作为当前帧的初始化位姿。
+			    // 通过BoW的方式在当前帧中找到参考帧特征点的匹配点。
+			    // 最小化3D点的重投影误差得到位姿。
+			    bOK = TrackReferenceKeyFrame();
+			}
+			
+			else
+			{
+			    // 根据恒速模型设定当前帧的初始位姿。
+			    // 通过投影的方式在当前帧中找到参考帧的匹配点。
+			    // 最小化3D重投影误差得到位姿。
+			    bOK = TrackWithMotionModel();
+			    
+			    // 没有跟踪成功时，跟踪参考帧，BoW加速匹配跟踪。
+			    if(!bOK)
+				bOK = TrackReferenceKeyFrame();
+			    
+			}
+		    }
                 }
 
                 // 初始化失败
@@ -396,99 +907,107 @@ namespace ORB_SLAM2
                 {
                     // BoW搜索，PnP求解位姿。
                     bOK = Relocalization();
+		    if(bOK)
+			cout<<"Relocalized. id: "<<mCurrentFrame.mnId<<endl;
                 }
             }
 
-            // 定位模式，不进行局部地图。
             else
-            {
-                // 步骤2.1 跟踪上一帧||参考帧||重定位。
-
-                // 跟踪丢失，重定位。
-                if(mState==LOST)
-                {
-                    bOK = Relocalization();
-                }
-
-                else
-                {
-                    // mbVO是跟踪模式下出现的变量。
-                    // mbVO=false 表示跟踪正常，很多匹配；  mbVO=true 表示匹配了很少的地图点云，要GG。
-                    
-                    // 跟踪正常。
-                    if(!mbVO)
-                    {
-                        if(!mVelocity.empty())
-                        {
-                            // 恒速模型跟踪。
-                            bOK = TrackWithMotionModel();
-                            
-                            // 恒速模型失败，参考帧跟踪。
-							if(!bOK)
-                              bOK = TrackReferenceKeyFrame();
-                        }
-
-                        // 没有恒速跟踪模型。
-                        else
-                        {
-                            bOK = TrackReferenceKeyFrame();
-                        }
-                    }
-
-                    // 跟踪效果不好，要GG了。
-                    else
-                    {
-
-                        // 同时进行跟踪和重定位。
-                        // 如果重定位成功，使用重定位的结果。否则保持跟踪视觉里里程计点。
-                        bool bOKMM = false;         // 恒速模型运行标志位。
-                        bool bOKReloc =false;       // 重定位运行标志位。
-                        vector<MapPoint *> vpMPsMM; // 恒速模型匹配地图点云
-                        vector<bool> vbOutMM;       // 恒速模型匹配异常值情况。
-                        cv::Mat TcwMM;              // 恒速模型位姿。
-
-                        // 进行恒速模型匹配。
-                        if(!mVelocity.empty())
-                        {
-                            bOKMM = TrackWithMotionModel();
-                            vpMPsMM = mCurrentFrame.mvpMapPoints;
-                            vbOutMM = mCurrentFrame.mvbOutlier;
-                            TcwMM = mCurrentFrame.mTcw.clone();
-                        }
-                        // 进行重定位。
-                        bOKReloc = Relocalization();
-
-                        // 跟踪成功，重定位失败。
-                        if(bOKMM && !bOKReloc)
-                        {
-                            mCurrentFrame.SetPose(TcwMM);
-                            mCurrentFrame.mvpMapPoints = vpMPsMM;
-                            mCurrentFrame.mvbOutlier = vbOutMM;
-                            
-                            // 处理的不是一个东西，应该在TrackLocalMap函数中吧。
-                            // 更新当前帧的MapPoints被观测程度。
-                            if (mbVO)
-                            {
-                               for (int i=0; i<mCurrentFrame.N; i++)
-                               {
-                                    // 有匹配点，且不是外点，加入。
-                                    if(mCurrentFrame.mvpMapPoints[i] && !mCurrentFrame.mvbOutlier[i])
-                                    {
-                                        mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
-                                    }
-                               }
-                            }
-                        }
-                        // 重定位成功表示跟踪正常，更相信定位结果。
-                        else if(bOKReloc)
-                        {
-                            mbVO = false;
-                        }
-
-                        bOK = bOKReloc || bOKMM;
-                    }   // 跟踪效果不好
-                }   // 没跟丢
-            }   // 定位模式 
+	    {
+		cerr<<"Localization mode not supported yet"<<endl;
+	    }
+	    
+            
+//             // 定位模式，不进行局部地图。
+//             else
+//             {
+//                 // 步骤2.1 跟踪上一帧||参考帧||重定位。
+// 
+//                 // 跟踪丢失，重定位。
+//                 if(mState==LOST)
+//                 {
+//                     bOK = Relocalization();
+//                 }
+// 
+//                 else
+//                 {
+//                     // mbVO是跟踪模式下出现的变量。
+//                     // mbVO=false 表示跟踪正常，很多匹配；  mbVO=true 表示匹配了很少的地图点云，要GG。
+//                     
+//                     // 跟踪正常。
+//                     if(!mbVO)
+//                     {
+//                         if(!mVelocity.empty())
+//                         {
+//                             // 恒速模型跟踪。
+//                             bOK = TrackWithMotionModel();
+//                             
+//                             // 恒速模型失败，参考帧跟踪。
+// 							if(!bOK)
+//                               bOK = TrackReferenceKeyFrame();
+//                         }
+// 
+//                         // 没有恒速跟踪模型。
+//                         else
+//                         {
+//                             bOK = TrackReferenceKeyFrame();
+//                         }
+//                     }
+// 
+//                     // 跟踪效果不好，要GG了。
+//                     else
+//                     {
+// 
+//                         // 同时进行跟踪和重定位。
+//                         // 如果重定位成功，使用重定位的结果。否则保持跟踪视觉里里程计点。
+//                         bool bOKMM = false;         // 恒速模型运行标志位。
+//                         bool bOKReloc =false;       // 重定位运行标志位。
+//                         vector<MapPoint *> vpMPsMM; // 恒速模型匹配地图点云
+//                         vector<bool> vbOutMM;       // 恒速模型匹配异常值情况。
+//                         cv::Mat TcwMM;              // 恒速模型位姿。
+// 
+//                         // 进行恒速模型匹配。
+//                         if(!mVelocity.empty())
+//                         {
+//                             bOKMM = TrackWithMotionModel();
+//                             vpMPsMM = mCurrentFrame.mvpMapPoints;
+//                             vbOutMM = mCurrentFrame.mvbOutlier;
+//                             TcwMM = mCurrentFrame.mTcw.clone();
+//                         }
+//                         // 进行重定位。
+//                         bOKReloc = Relocalization();
+// 
+//                         // 跟踪成功，重定位失败。
+//                         if(bOKMM && !bOKReloc)
+//                         {
+//                             mCurrentFrame.SetPose(TcwMM);
+//                             mCurrentFrame.mvpMapPoints = vpMPsMM;
+//                             mCurrentFrame.mvbOutlier = vbOutMM;
+//                             
+//                             // 处理的不是一个东西，应该在TrackLocalMap函数中吧。
+//                             // 更新当前帧的MapPoints被观测程度。
+//                             if (mbVO)
+//                             {
+//                                for (int i=0; i<mCurrentFrame.N; i++)
+//                                {
+//                                     // 有匹配点，且不是外点，加入。
+//                                     if(mCurrentFrame.mvpMapPoints[i] && !mCurrentFrame.mvbOutlier[i])
+//                                     {
+//                                         mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
+//                                     }
+//                                }
+//                             }
+//                         }
+//                         // 重定位成功表示跟踪正常，更相信定位结果。
+//                         else if(bOKReloc)
+//                         {
+//                             mbVO = false;
+//                         }
+// 
+//                         bOK = bOKReloc || bOKMM;
+//                     }   // 跟踪效果不好
+//                 }   // 没跟丢
+//             }   // 定位模式 
 
             // 将最新的关键帧作为参考帧, mpReferenceKF在初始化MonocularInitialization()中完成。
             mCurrentFrame.mpReferenceKF = mpReferenceKF;
@@ -503,22 +1022,82 @@ namespace ORB_SLAM2
             if(!mbOnlyTracking)
             {      
                 if(bOK)
+		{
+#ifndef TRACK_WITH_IMU
                     bOK = TrackLocalMap();
+#else
+		    if(!mpLocalMapper->GetVINSInited())
+			bOK = TrackLocalMap();
+		    else
+		    {
+			// 刚完成重定位
+			if(mbRelocBiasPrepare)
+			{
+			    bOK = TrackLocalMap();
+			}
+			else
+			{
+			    bOK = TrackLocalMapWithIMU(bMapUpdated);
+			}
+		    }
+#endif    
+		}
             }
             // 定位模式。
             else
             {
+		cerr<<"Localization mode not supported yet"<<endl;
                 // mbVO=true 表示地图效果不好，不能提取局部地图因而无法运行TrackLocalMap(),如果系统重定位，执行局部地图构建。
-                if(bOK && !mbVO)
-                    bOK = TrackLocalMap();
+//                 if(bOK && !mbVO)
+//                     bOK = TrackLocalMap();
             }
 
             // bOK表示之前所有过程的结果，如果完成表示Tracking成功，否则只要有一个有问题，就GG。
             if(bOK)
+	    {
                 mState = OK;
+		
+		// 在重定位后，重新计算IMU偏移
+		if(mbRelocBiasPrepare)
+		{
+		    mv20FramesReloc.push_back(mCurrentFrame);
+		    
+		     // 创建关键帧前，重新计算IMU偏移
+		    if(mCurrentFrame.mnId == mnLastRelocFrameId+20-1)
+		    {
+			NavState nscur;
+			RecomputeIMUBiasAndCurrentNavstate(nscur);
+			
+			// 更新当前帧Nav
+			mCurrentFrame.SetNavState(nscur);
+			
+			// 清空标志和Frame缓存
+			mbRelocBiasPrepare = false;
+			mv20FramesReloc.clear();
+			
+			// 使能Local mapping 
+			mpLocalMapper->Release();
+			
+			// 创建新关键帧
+			mbCreateNewKFAfterReloc = true;
+			
+			// test log
+			cout<<"NavState recomputed."<<endl;
+			cout<<"V:"<<mCurrentFrame.GetNavState().Get_V().transpose()<<endl;
+			cout<<"bg:"<<mCurrentFrame.GetNavState().Get_BiasGyr().transpose()<<endl;
+			cout<<"ba:"<<mCurrentFrame.GetNavState().Get_BiasAcc().transpose()<<endl;
+			cout<<"dbg:"<<mCurrentFrame.GetNavState().Get_dBias_Gyr().transpose()<<endl;
+			cout<<"dba:"<<mCurrentFrame.GetNavState().Get_dBias_Acc().transpose()<<endl;
+		    }    
+		}
+	    }
             else
+	    {
                 mState = LOST;
-
+		
+		if(mv20FramesReloc.size() > 0)
+		    mv20FramesReloc.clear();
+	    }
             // 更新UI绘制。
             mpFrameDrawer->Update(this);
 
@@ -567,21 +1146,33 @@ namespace ORB_SLAM2
                 mlpTemporalPoints.clear();
 
                 // 步骤2.6 检测并插入关键帧，对于双目会产生新的MapPoints。
-                if(NeedNewKeyFrame())
+                if(NeedNewKeyFrame() || mbCreateNewKFAfterReloc )
                     CreateNewKeyFrame();
-                
+		
+		// 清除标志
+		if(mbCreateNewKFAfterReloc)
+		    mbCreateNewKFAfterReloc = false;
+		
                 // 删除在bundle adjustment中检测为离群值的3D点。 
                 for (int i=0; i<mCurrentFrame.N; i++)
                 {
                     if(mCurrentFrame.mvpMapPoints[i] && mCurrentFrame.mvbOutlier[i])
                         mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint *>(NULL);
-                }   
+		}
+		
+		// 清除第一次初始标志
+		if(mpLocalMapper->GetFirstVINSInited())
+		{
+		    mpLocalMapper->SetFirstVINSInited(false);
+		}
+		
             }   // 更新速率模型，插入关键帧判断。
 
             // 跟踪失败，且重定位也失败，使能重新Reset 
             if(mState == LOST)
             {
-                if(mpMap->KeyFramesInMap()<=5)
+                // if(mpMap->KeyFramesInMap()<=5)
+		if(!mpLocalMapper->GetVINSInited())
                 {
                     cout << "Track lost soon after initialisation, reseting ... " <<endl;
                     mpSystem->Reset();
@@ -721,7 +1312,7 @@ namespace ORB_SLAM2
         if(!mpInitializer)
         {
             // 设置参考帧
-            
+			mvIMUSinceLastKF.clear();
             // 初始帧的特征数>100
             if(mCurrentFrame.mvKeys.size()>100)
             {
@@ -818,10 +1409,28 @@ namespace ORB_SLAM2
     // 单目摄像头三角化生成MapPoints
     void Tracking::CreateInitialMapMonocular()
     {
-        
-        // 利用初始化的前两帧创建关键帧。
-        KeyFrame *pKFini = new KeyFrame(mInitialFrame, mpMap, mpKeyFrameDB);
-        KeyFrame *pKFcur = new KeyFrame(mCurrentFrame, mpMap, mpKeyFrameDB);
+	// KF1 和 KF2 之间的IMU
+	vector<IMUData> vimu1, vimu2;
+	for(size_t i=0; i<mvIMUSinceLastKF.size(); i++)
+	{
+	    IMUData imu = mvIMUSinceLastKF[i];
+	    if(imu._t < mInitialFrame.mTimeStamp)
+		vimu1.push_back(imu);
+	    else
+		vimu2.push_back(imu);
+	}
+	
+	// 利用初始化的前两帧创建关键帧。
+	//  KeyFrame *pKFini = new KeyFrame(mInitialFrame, mpMap, mpKeyFrameDB);
+	KeyFrame *pKFini = new KeyFrame(mInitialFrame, mpMap, mpKeyFrameDB, vimu1, NULL);
+	pKFini->ComputePreInt();
+	
+	// KeyFrame *pKFcur = new KeyFrame(mCurrentFrame, mpMap, mpKeyFrameDB);
+	KeyFrame *pKFcur = new KeyFrame(mCurrentFrame, mpMap, mpKeyFrameDB, vimu2, pKFini);
+	pKFcur->ComputePreInt();
+	
+	// 清空IMU缓存
+	mvIMUSinceLastKF.clear();
 
         // 步骤1 初始化关键帧的描述子转为BoW。
         pKFini->ComputeBoW();
@@ -1030,7 +1639,8 @@ namespace ORB_SLAM2
         mLastFrame.SetPose(Tlr*pRef->GetPose()); // Tlr*Trw = Tlw 1:last r:reference w:world
 
         // 如果上一帧为关键帧，或者单目的情况，则退出
-        if(mnLastKeyFrameId==mLastFrame.mnId || mSensor==System::MONOCULAR)
+        //if(mnLastKeyFrameId==mLastFrame.mnId || mSensor==System::MONOCULAR)
+	if(mnLastKeyFrameId==mLastFrame.mnId || mSensor==System::MONOCULAR || !mbOnlyTracking)
             return;
 
         // 步骤2：对于双目或rgbd摄像头，为上一帧临时生成新的MapPoints
@@ -1238,6 +1848,8 @@ namespace ORB_SLAM2
             return true;
     }
 
+    
+    // 66666，修改
     // 判断当前帧是否维关键帧,bLocalMappingIdle表示LocalMapping是否繁忙。
     // return 需要为true
     bool Tracking::NeedNewKeyFrame()
@@ -1247,6 +1859,12 @@ namespace ORB_SLAM2
         if(mbOnlyTracking)
             return false;
 
+		// 更新初始pose
+		if(mpLocalMapper->GetUpdatingInitPoses())
+		{
+		cerr<<"mpLocalMapper->GetUpdatingInitPoses, no new KF"<<endl;
+		return false;
+		}
         // 如果局部地图被闭环检测使用，不插入关键帧。
         if(mpLocalMapper->isStopped() || mpLocalMapper->stopRequested())
             return false;
@@ -1259,9 +1877,12 @@ namespace ORB_SLAM2
         // mMaxFrames等于输入图像的帧率。
         // 关键帧比较少，考虑插入关键帧。
         // 距离上次重定位超过1s(帧率),插入关键帧。
-        if(mCurrentFrame.mnId<mnLastRelocFrameId+mMaxFrames && nKFs > mMaxFrames)
-            return false;
-
+	if(mCurrentFrame.mnId<mnLastRelocFrameId+mMaxFrames && nKFs > mMaxFrames)
+	    return false;
+	
+	if(mbRelocBiasPrepare/* && mpLocalMapper->GetVINSInited()*/)
+	    return false;
+	
         // 步骤3 得到参考帧跟踪到的MapPoints数量。
         // 在UpdateLocalKeyFrames函数中会将与当前帧共视程度最高的关键帧设定当前帧的参考管关键帧。
         int nMinObs = 3;            // 表示关键帧质量，越大表示被越多关键帧观测到。
@@ -1281,7 +1902,7 @@ namespace ORB_SLAM2
             {
                 if(mCurrentFrame.mvDepth[i]>0 && mCurrentFrame.mvDepth[i]<mThDepth)
                 {
-                    nTotal++;   // 课题以添加MapPoints的总数。
+                    nTotal++;   // 可以添加MapPoints的总数。
                     if(mCurrentFrame.mvpMapPoints[i])
                         if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
                             nMap++;     // 被关键帧观测到的点云数。
@@ -1310,11 +1931,21 @@ namespace ORB_SLAM2
         float thMapRatio = 0.35f;
         if(mnMatchesInliers>300)
             thMapRatio = 0.2f;
+	
+	// VI SLAM
+	// 当前帧与LastKF的时间差
+	double timegap = 0.1;
+	if(mpLocalMapper->GetVINSInited())
+	    timegap = 0.5;
 
-		// 关键帧判据
+	const bool cTimeGap = ((mCurrentFrame.mTimeStamp - mpLastKeyFrame->mTimeStamp)>=timegap) && bLocalMappingIdle && mnMatchesInliers>15;
+	
+	
+	// 关键帧判据
         // Condition 1a: More than "MaxFrames" have passed from last keyframe insertion
         // 长时间没有插入关键帧标志位, 超过1s。
-        const bool c1a = mCurrentFrame.mnId >= mnLastKeyFrameId+mMaxFrames;
+        // const bool c1a = mCurrentFrame.mnId >= mnLastKeyFrameId+mMaxFrames;
+	const bool c1a = mCurrentFrame.mTimeStamp >= mpLastKeyFrame->mTimeStamp+3.0;
         // Condition 1b: More than "MinFrames" have passed and Local Mapping is idle
         // 等待插入关键帧的时间超过最短时间阈值，且localmapping处于空闲状态。
         const bool c1b = (mCurrentFrame.mnId>=mnLastKeyFrameId+mMinFrames && bLocalMappingIdle);
@@ -1326,7 +1957,7 @@ namespace ORB_SLAM2
         const bool c2 = ((mnMatchesInliers<nRefMatches*thRefRatio || ratioMap<thMapRatio) && mnMatchesInliers>15);
 
         // 满足以c2和c1a,c1b,c1c中的任何一个。
-        if((c1a||c1b||c1c)&&c2)
+        if(((c1a||c1b||c1c)&&c2) || cTimeGap)
         {
             // 局部地图构建线程空闲，是关键帧。
             if(bLocalMappingIdle)
@@ -1364,9 +1995,19 @@ namespace ORB_SLAM2
         if(!mpLocalMapper->SetNotStop(true))
             return;
 
-        // 步骤1 将当前帧构造成关键帧。
-        KeyFrame *pKF = new KeyFrame(mCurrentFrame, mpMap, mpKeyFrameDB);
-
+	// 步骤1 将当前帧构造成关键帧。
+	// KeyFrame *pKF = new KeyFrame(mCurrentFrame, mpMap, mpKeyFrameDB);
+	KeyFrame *pKF = new KeyFrame(mCurrentFrame, mpMap, mpKeyFrameDB, mvIMUSinceLastKF, mpLastKeyFrame);
+	
+	// 设置KF的初始导航状态
+	pKF->SetInitialNavStateAndBias(mCurrentFrame.GetNavState());
+	
+	// 计算preintegrator
+	pKF->ComputePreInt();
+	
+	// 清空IMU缓存
+	mvIMUSinceLastKF.clear();
+		
         // 步骤2 将当前关键帧设置为之后帧的参考关键帧。
         // 在UpdateLocalKeyFrames函数中将与当前帧共视程度最高的关键帧设定为当前帧的参考关键帧。
         mpReferenceKF = pKF;				// Tracking 线程的参考关键帧是新建立的关键帧。
@@ -1587,8 +2228,8 @@ namespace ORB_SLAM2
                 if(!pMP->isBad())
                 {
                     // 能观测到当前帧MapPoints的关键帧。
-                    const map<KeyFrame*, size_t> observations = pMP->GetObservations();
-                    for(map<KeyFrame *, size_t>::const_iterator it=observations.begin(), itEnd=observations.end(); it!=itEnd;it++)
+                    const mapMapPointObs/*map<KeyFrame*, size_t>*/ observations = pMP->GetObservations();
+                    for(mapMapPointObs/*map<KeyFrame*, size_t>*/::const_iterator it=observations.begin(), itend=observations.end(); it!=itend;it++)
                         keyframeCounter[it->first]++;
                 }
                 else
@@ -1684,10 +2325,36 @@ namespace ORB_SLAM2
                 {
                     mvpLocalKeyFrames.push_back(pParent);
                     pParent->mnTrackReferenceForFrame = mCurrentFrame.mnId;
-                    break;
+                    // break;
                 }
-            }
-
+	    }
+	    
+	    
+	    KeyFrame *pPrevKF = pKF->GetPrevKeyFrame();
+	    if(pPrevKF)
+	    {
+		if(pPrevKF->isBad())
+		    cerr<<"pPrevKF is bad in UpdateLocalKeyFrames()?????"<<endl;
+		if(pPrevKF->mnTrackReferenceForFrame!=mCurrentFrame.mnId)
+		{
+		    mvpLocalKeyFrames.push_back(pPrevKF);
+		    pPrevKF->mnTrackReferenceForFrame = mCurrentFrame.mnId;
+		}
+	    }
+	    
+	    KeyFrame *pNextKF = pKF->GetNextKeyFrame();		
+	    if(pNextKF)
+	    {
+		if(pNextKF->isBad())
+		    cerr<<"pNextKF is bad in UpdateLocalKeyFrames()?????"<<endl;
+		if(pNextKF->mnTrackReferenceForFrame!=mCurrentFrame.mnId)
+		{
+		    mvpLocalKeyFrames.push_back(pNextKF);
+		    pNextKF->mnTrackReferenceForFrame = mCurrentFrame.mnId;
+		}
+	    }
+	    
+	    
         }   // 步骤2.2
 
         // 步骤3 更新当前帧的参考关键帧，与自己共视程度最高的帧作为参考关键帧。
@@ -1869,9 +2536,14 @@ namespace ORB_SLAM2
         if(!bMatch)
             return false;
         else
-        {
-            mnLastRelocFrameId = mCurrentFrame.mnId;
-            return true;
+	{
+	    //Test log
+	    if(!mpLocalMapper->GetVINSInited()) 
+		cerr<<"VINS not inited? why."<<endl;
+	    
+	    mbRelocBiasPrepare = true;
+	    mnLastRelocFrameId = mCurrentFrame.mnId;
+	    return true;
         }
     }
 

@@ -24,58 +24,25 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef G2O_ROBUST_KERNEL_H
-#define G2O_ROBUST_KERNEL_H
+#ifndef G2O_SPARSE_HELPER_H
+#define G2O_SPARSE_HELPER_H
 
-#ifdef _MSC_VER
-#include <memory>
-#else
-#include <tr1/memory>
-#endif
-#include <Eigen/Core>
+//#include "g2o_stuff_api.h"
 
+#include <string>
 
 namespace g2o {
 
   /**
-   * \brief base for all robust cost functions
-   *
-   * Note in all the implementations for the other cost functions the e in the
-   * funtions corresponds to the sqaured errors, i.e., the robustification
-   * functions gets passed the squared error.
-   *
-   * e.g. the robustified least squares function is
-   *
-   * chi^2 = sum_{e} rho( e^T Omega e )
+   * write an array to a file, debugging
    */
-  class  RobustKernel
-  {
-    public:
-      RobustKernel();
-      explicit RobustKernel(double delta);
-      virtual ~RobustKernel() {}
-      /**
-       * compute the scaling factor for a error:
-       * The error is e^T Omega e
-       * The output rho is
-       * rho[0]: The actual scaled error value
-       * rho[1]: First derivative of the scaling function
-       * rho[2]: Second derivative of the scaling function
-       */
-      virtual void robustify(double squaredError, Eigen::Vector3d& rho) const = 0;
+  /*G2O_STUFF_API*/ bool writeVector(const std::string& filename, const double*v, int n);
 
-      /**
-       * set the window size of the error. A squared error above delta^2 is considered
-       * as outlier in the data.
-       */
-      virtual void setDelta(double delta);
-      double delta() const { return _delta;}
+  /**
+   * write a CCS matrix given by pointer to column, row, and values
+   */
+  /*G2O_STUFF_API*/ bool writeCCSMatrix(const std::string& filename, int rows, int cols, const int* p, const int* i, const double* v, bool upperTriangleSymmetric = true);
 
-    protected:
-      double _delta;
-  };
-  typedef std::tr1::shared_ptr<RobustKernel> RobustKernelPtr;
-
-} // end namespace g2o
+} // end namespace
 
 #endif

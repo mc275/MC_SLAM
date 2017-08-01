@@ -100,15 +100,6 @@ bool EdgeSE3ProjectXYZ::write(std::ostream& os) const {
 }
 
 
-/**
- * @brief Linearization
- * 
- * 线性化, 即同时对重投影误差分别关于位姿vj和路标vi求雅克比矩阵.
- *
- * _jacobianOplusXj是重投影误差关于位姿vj的导数
- * _jacobianOplusXi是重投影误差关于路标vi的导数
- * xyz即路标在世界坐标系下的三维坐标, xyz_trans是路标在相机坐标系下的三维坐标. map()函数就是通过位姿T=[R|t]进行坐标系映射.
- */
 void EdgeSE3ProjectXYZ::linearizeOplus() {
   VertexSE3Expmap * vj = static_cast<VertexSE3Expmap *>(_vertices[1]);
   SE3Quat T(vj->estimate());
@@ -130,10 +121,8 @@ void EdgeSE3ProjectXYZ::linearizeOplus() {
   tmp(1,1) = fy;
   tmp(1,2) = -y/z*fy;
 
-  // 2*3
   _jacobianOplusXi =  -1./z * tmp * T.rotation().toRotationMatrix();
 
-  // 2*6 the same as EdgeSE3ProjectXYZOnlyPose::linearizeOplus()
   _jacobianOplusXj(0,0) =  x*y/z_2 *fx;
   _jacobianOplusXj(0,1) = -(1+(x*x/z_2)) *fx;
   _jacobianOplusXj(0,2) = y/z *fx;
@@ -274,14 +263,6 @@ bool EdgeSE3ProjectXYZOnlyPose::write(std::ostream& os) const {
 }
 
 
-/**
- * @brief Linearization
- * 
- * 线性化, 只对位姿vi求导
- * 
- * _jacobianOplusXi是重投影误差关于位姿vj的导数
- * xyz_trans是路标在新一帧相机坐标系下的估计位置(3D),优化时用逆深度.
- */
 void EdgeSE3ProjectXYZOnlyPose::linearizeOplus() {
   VertexSE3Expmap * vi = static_cast<VertexSE3Expmap *>(_vertices[0]);
   Vector3d xyz_trans = vi->estimate().map(Xw);
@@ -291,7 +272,6 @@ void EdgeSE3ProjectXYZOnlyPose::linearizeOplus() {
   double invz = 1.0/xyz_trans[2];
   double invz_2 = invz*invz;
 
-  // 2*6
   _jacobianOplusXi(0,0) =  x*y*invz_2 *fx;
   _jacobianOplusXi(0,1) = -(1+(x*x*invz_2)) *fx;
   _jacobianOplusXi(0,2) = y*invz *fx;
@@ -361,7 +341,6 @@ void EdgeStereoSE3ProjectXYZOnlyPose::linearizeOplus() {
   double invz = 1.0/xyz_trans[2];
   double invz_2 = invz*invz;
 
-  // 3*6
   _jacobianOplusXi(0,0) =  x*y*invz_2 *fx;
   _jacobianOplusXi(0,1) = -(1+(x*x*invz_2)) *fx;
   _jacobianOplusXi(0,2) = y*invz *fx;

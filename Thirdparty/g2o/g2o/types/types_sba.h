@@ -28,7 +28,6 @@
 #define G2O_SBA_TYPES
 
 #include "../core/base_vertex.h"
-#include "../core/g2o_core_api.h"
 
 #include <Eigen/Geometry>
 #include <iostream>
@@ -38,7 +37,7 @@ namespace g2o {
 /**
  * \brief Point vertex, XYZ
  */
-	class G2O_CORE_API VertexSBAPointXYZ : public BaseVertex<3, Vector3d>
+ class VertexSBAPointXYZ : public BaseVertex<3, Vector3d>
 {
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW    

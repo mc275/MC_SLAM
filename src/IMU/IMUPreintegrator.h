@@ -4,7 +4,7 @@
 #include <Eigen/Dense>
 
 #include "IMU/imudata.h"
-#include <so3.h>
+#include "IMU/so3.h"
 
 namespace ORB_SLAM2
 {

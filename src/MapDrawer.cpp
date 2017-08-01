@@ -191,7 +191,8 @@ namespace ORB_SLAM2
     #endif
 
         glLineWidth(mCameraLineWidth);
-        glColor3f(0.0f, 1.0f, 0.0f);
+	//glColor3f(0.0f, 1.0f, 0.0f);
+        glColor3f(1.0f, 0.0f, 1.0f);
         glBegin(GL_LINES);
         glVertex3f(0, 0, 0);
         glVertex3f(w, h, z);

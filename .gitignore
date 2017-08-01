@@ -11,7 +11,8 @@
 *.o
 *.obj
 build
-
+tmp
+*~
 # Precompiled Headers
 *.gch
 *.pch
@@ -24,6 +25,7 @@ build
 # Fortran module files
 *.mod
 *.smod
+*.bak
 
 # Compiled Static libraries
 *.lai

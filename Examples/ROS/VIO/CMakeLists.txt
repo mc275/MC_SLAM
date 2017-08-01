@@ -49,11 +49,11 @@ ${EIGEN3_LIBS}
 ${Pangolin_LIBRARIES}
 ${PROJECT_SOURCE_DIR}/../../../Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/../../../Thirdparty/g2o/lib/libg2o.so
-${PROJECT_SOURCE_DIR}/../../../lib/libORB_SLAM2.so
+${PROJECT_SOURCE_DIR}/../../../lib/libORB_SLAM_MC.so
 )
 
 rosbuild_add_executable(VIO
-src/ros_vio.cc
+src/ros_vio.cpp
 src/MsgSync/MsgSynchronizer.cpp
 src/MsgSync/MsgSynchronizer.h
 )

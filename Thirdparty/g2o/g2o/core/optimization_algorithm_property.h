@@ -28,14 +28,13 @@
 #define G2O_OPTIMIZATION_ALGORITHM_PROPERTY_H
 
 #include <string>
-#include "g2o_core_api.h"
 
 namespace g2o {
 
 /**
  * \brief describe the properties of a solver
  */
-	struct G2O_CORE_API OptimizationAlgorithmProperty
+struct  OptimizationAlgorithmProperty
 {
   std::string name;           ///< name of the solver, e.g., var
   std::string desc;           ///< short description of the solver

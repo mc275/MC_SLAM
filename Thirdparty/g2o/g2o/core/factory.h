@@ -31,7 +31,6 @@
 #include "../stuff/misc.h"
 #include "hyper_graph.h"
 #include "creators.h"
-#include "g2o_core_api.h"
 
 #include <string>
 #include <map>
@@ -47,7 +46,7 @@ namespace g2o {
   /**
    * \brief create vertices and edges based on TAGs in, for example, a file
    */
-  class G2O_CORE_API Factory
+  class  Factory
   {
     public:
 

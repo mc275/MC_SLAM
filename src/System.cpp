@@ -8,7 +8,9 @@
 #include <pangolin/pangolin.h>
 #include <iostream>
 #include <iomanip>
+#include <time.h>
 
+#include "IMU/configparam.h"
 // 搜索词袋文件。
 bool has_suffix(const std::string &str, const std::string &suffix)
 {
@@ -19,6 +21,111 @@ bool has_suffix(const std::string &str, const std::string &suffix)
 
 namespace ORB_SLAM2
 {
+    
+    
+    
+    /**********************VI SLAM***************************/
+    
+    bool System::bLocalMapAcceptKF(void)
+    {
+	return (mpLocalMapper->AcceptKeyFrames() && !mpLocalMapper->isStopped());
+    }
+
+    
+    
+    void System::SaveKeyFrameTrajectoryNavState(const string& filename)
+    {
+	cout << endl << "Saving keyframe NavState to " << filename << " ..." << endl;
+	
+	vector<KeyFrame *> vpKFs = mpMap->GetAllKeyFrames();
+	sort(vpKFs.begin(), vpKFs.end(), KeyFrame::lId);
+	
+	ofstream f;
+	f.open(filename.c_str());
+	f << fixed;
+	
+	for(size_t i=0; i<vpKFs.size(); i++)
+	{
+	    KeyFrame *pKF = vpKFs[i];
+	    
+	    if(pKF->isBad())
+		continue;
+	    
+	    Eigen::Vector3d P = pKF->GetNavState().Get_P();
+	    Eigen::Vector3d V = pKF->GetNavState().Get_V();
+	    Eigen::Quaterniond q = pKF->GetNavState().Get_R().unit_quaternion();
+	    Eigen::Vector3d bg = pKF->GetNavState().Get_BiasGyr();
+	    Eigen::Vector3d ba = pKF->GetNavState().Get_BiasAcc();
+	    Eigen::Vector3d dbg = pKF->GetNavState().Get_dBias_Gyr();
+	    Eigen::Vector3d dba = pKF->GetNavState().Get_dBias_Acc();
+	    
+	    f << setprecision(10) << pKF->mTimeStamp << setprecision(7) << " ";
+	    f << P(0) << " " << P(1) << " " << P(2) << " ";
+	    f << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << " ";
+	    f << V(0) << " " << V(1) << " " << V(2) << " ";
+	    f << bg(0)+dbg(0) << " " << bg(1)+dbg(1) << " " << bg(2)+dbg(2) << " ";
+	    f << ba(0)+dba(0) << " " << ba(1)+dba(1) << " " << ba(2)+dba(2) << " ";
+	    
+	    f << endl;
+	}
+	
+	f.close();
+	cout << endl << "NavState trajectory saved!" << endl;
+	
+    }
+
+    
+    
+    cv::Mat System::TrackMonoVI(const cv::Mat& im, const std::vector< IMUData >& vimu, const double& timestamp)
+    {
+	
+	if(mSensor != MONOCULAR)
+	{
+	    cerr << "ERROR: you called TrackMonocular but input sensor was not set to Monocular." << endl;
+	    exit(-1);
+	}
+	
+	// 模式设置
+	{
+	    unique_lock<mutex> lock(mMutexMode);
+	    
+	    if(mbActivateLocalizationMode)
+	    {
+		mpLocalMapper->RequestStop();
+		
+		while(!mpLocalMapper->isStopped())
+		{
+		    usleep(1000);
+		}
+		
+		mpTracker->InformOnlyTracking(true);
+		mbActivateLocalizationMode = false;
+	    }
+	    if(mbDeactivateLocalizationMode)
+	    {
+		mpTracker->InformOnlyTracking(false);
+		mpLocalMapper->Release();
+		mbDeactivateLocalizationMode = false;
+	    } 
+	}
+	
+	// Reset检查
+	{
+	    unique_lock<mutex> lock(mMutexReset);
+	    if(mbReset)
+	    {
+		mpTracker->Reset();
+		mbReset = false;
+	    }
+	}
+	
+	return mpTracker->GrabImageMonoVI(im, vimu, timestamp);
+	
+    }
+    
+    /**********************************************************/
+    
+    
 
     // 构造函数。初始化系统参数，创建Tracking，Local Mapping和LoopCLosing三个类，启动线程。
     System::System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor, const bool bUseViewer):
@@ -44,6 +151,7 @@ namespace ORB_SLAM2
         if(!fsSetting.isOpened())
         {
             cerr << "Failed to Open settings file at:" << strSettingsFile <<endl;
+	    exit(-1);
         }
         
         // 加载ORB词袋。
@@ -63,12 +171,12 @@ namespace ORB_SLAM2
         if(!bVocLoad)
         {
             cerr << "Wrong path to vocabulary. " << endl;
-            cerr << "Faied to open at: " << strVocFile << endl;
+            cerr << "Failed to open at: " << strVocFile << endl;
             exit(-1);
         }
-        cout << "Vocabulary loaded!" << endl;	// 加载成功
+        cout << "Vocabulary loaded!" << endl << endl;	// 加载成功
 
-
+		ConfigParam config(strSettingsFile);
         // 创建关键帧库类的对象，闭环检测时与当前帧匹配。
         // mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
 		mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
@@ -81,17 +189,17 @@ namespace ORB_SLAM2
         // 创建Tracking类的对象，初始化跟踪线程。
         // (这个在主线程main()中完成，不需要额外构造线程对象，this是system的对象)。
 		// Tracking线程中，词袋加速匹配，绘制帧位置和地图信息，更新地图和关键帧库，读取了配置文件。
-        mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer, mpMap, mpKeyFrameDatabase, strSettingsFile, mSensor);
+        mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer, mpMap, mpKeyFrameDatabase, strSettingsFile, mSensor, &config);
 
         // 创建Local Mapping类的对象，初始化局部地图线程并启动。
 		// local mapping更行了地图
-        mpLocalMapper = new LocalMapping(mpMap, mSensor==MONOCULAR);
+        mpLocalMapper = new LocalMapping(mpMap, mSensor==MONOCULAR, &config);
         // thread(&F, Args)表示，线程入口函数地址为F(可以直接是类的成员函数)，传递的类对象的参数为Args
         mptLocalMapping = new thread(&ORB_SLAM2::LocalMapping::Run, mpLocalMapper);
 
         // 创建Loop Closing类的对象，初始化闭环检测线程并启动。
 		// Loop Closing更新地图，利用KDB和词袋进行闭环检测。
-        mpLoopCloser = new LoopClosing(mpMap, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR);
+        mpLoopCloser = new LoopClosing(mpMap, mpKeyFrameDatabase, mpVocabulary, /*mSensor!=MONOCULAR*/true, &config);
         mptLoopClosing = new thread(&ORB_SLAM2::LoopClosing::Run, mpLoopCloser);
 
         // 创建Viewe类的对象，如果需要显示，初始化可视化绘制线程并启动。
@@ -112,6 +220,11 @@ namespace ORB_SLAM2
 
         mpLoopCloser->SetTracker(mpTracker);
         mpLoopCloser->SetLocalMapper(mpLocalMapper);
+
+	if(ConfigParam::GetRealTimeFlag())
+	{
+	    mptLocalMappingVIOInit = new thread(&ORB_SLAM2::LocalMapping::VINSInitThread, mpLocalMapper);
+	}
 
     }
 
@@ -287,7 +400,7 @@ namespace ORB_SLAM2
     // 重置标志位设置。
     void System::Reset()
     {
-        unique_lock<mutex> lock(mMutexMode);
+        unique_lock<mutex> lock(mMutexReset);
         mbReset = true;
     }
 

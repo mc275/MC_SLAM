@@ -32,7 +32,6 @@
 #include "../stuff/timeutil.h"
 #include "../stuff/macros.h"
 #include "../stuff/misc.h"
-#include "block_solver.h"
 
 namespace g2o {
 

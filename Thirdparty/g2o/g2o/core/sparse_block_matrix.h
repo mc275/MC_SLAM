@@ -59,7 +59,7 @@ namespace g2o {
  * template argument).  
  */
 template <class MatrixType = MatrixXd >
-class  SparseBlockMatrix {
+class SparseBlockMatrix {
 
   public:
     //! this is the type of the elementary block, it is an Eigen::Matrix.
@@ -220,9 +220,9 @@ class  SparseBlockMatrix {
 };
 
 template < class  MatrixType >
-G2O_CORE_API std::ostream& operator << (std::ostream&, const SparseBlockMatrix<MatrixType>& m);
+std::ostream& operator << (std::ostream&, const SparseBlockMatrix<MatrixType>& m);
 
-G2O_CORE_API typedef SparseBlockMatrix<MatrixXd> SparseBlockMatrixXd;
+  typedef SparseBlockMatrix<MatrixXd> SparseBlockMatrixXd;   
 
 } //end namespace
 

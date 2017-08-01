@@ -16,12 +16,10 @@
 
 #include "FClass.h"
 
-#include "../DUtils/config.h"
-
 namespace DBoW2 {
 
 /// Functions to manipulate ORB descriptors
-class EXPORT FORB : protected FClass
+class FORB: protected FClass
 {
 public:
 
@@ -30,7 +28,7 @@ public:
   /// Pointer to a single descriptor
   typedef const TDescriptor *pDescriptor;
   /// Descriptor length (in bytes)
-  static const int L = 32;
+  static const int L;
 
   /**
    * Calculates the mean value of a set of descriptors

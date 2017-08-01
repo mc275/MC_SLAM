@@ -235,7 +235,7 @@ namespace g2o
 	    return true;
 	}
 	
-	bool write(std::ostream &os)
+	bool write(std::ostream &os) const
 	{
 	    return true;
 	}
