@@ -4,10 +4,9 @@ This is not completed for VISLAM
 Completed
 
 	the IMU Data class and Preintegrator lib, image and imu synchronize for rosbag
+    add the lib into the SLAM  
 
 To do
-
-    add the lib into the SLAM 
 
     add the data access not used ros framework
 
