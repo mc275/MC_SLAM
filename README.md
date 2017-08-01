@@ -20,6 +20,7 @@ Build with `build.sh`. Modify the path in `config/euroc.yaml`.
 
 Below is the primary README of ORBSLAM2.
 
+The rosbag need to be played when real flag is 1
 *****
 
 # ORB-SLAM2
