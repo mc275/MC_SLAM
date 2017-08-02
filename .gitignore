@@ -39,3 +39,4 @@ tmp
 *.app
 mono_*
 VIO
+evaluate
