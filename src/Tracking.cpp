@@ -89,7 +89,7 @@ namespace ORB_SLAM2
 	const cv::Mat &gw = mpLocalMapper->GetGravityVec();
 	const cv::Mat &Tcb = ConfigParam::GetMatT_cb();
 	
-	for(int i=0; i<N-2; i++)
+	for(size_t i=0; i<N-2; i++)
 	{
 	    const Frame &F1 = mv20FramesReloc[i];
 	    const Frame &F2 = mv20FramesReloc[i+1];
@@ -836,7 +836,7 @@ namespace ORB_SLAM2
         else
         {
             // bOK表示每个函数是否执行成功。
-            bool bOK;
+            bool bOK = false;
 
             // 使用恒速运动模型或参考帧跟踪估计相机位姿，如果丢失使用重定位估计。
 			// 跟踪CF,寻找与KF中的匹配特征点；恒速模型(或参考帧)，PnP求解R,t；
