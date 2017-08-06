@@ -26,6 +26,8 @@ tmp
 *.mod
 *.smod
 *.bak
+*.yaml
+euroc.yaml
 
 # Compiled Static libraries
 *.lai
