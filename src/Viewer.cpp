@@ -1,9 +1,6 @@
 
 
 
-
-
-
 #include "Viewer.h"
 
 #include <pangolin/pangolin.h>
@@ -13,21 +10,22 @@ namespace ORB_SLAM2
 {
 
     // 构造函数，初始化参数。
-    Viewer::Viewer(System *pSystem, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Tracking *pTracking, const string &strSettingPath):
-        mpSystem(pSystem), mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpTracker(pTracking), 
-        mbFinishRequested(false), mbFinished(true), mbStopped(false), mbStopRequested(false)
+    Viewer::Viewer(System *pSystem, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Tracking *pTracking,
+                   const string &strSettingPath) :
+            mpSystem(pSystem), mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpTracker(pTracking),
+            mbFinishRequested(false), mbFinished(true), mbStopped(false), mbStopRequested(false)
     {
 
         cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
 
         float fps = fSettings["Camera.fps"];
-        if(fps <1 )
-           fps = 30; 
-        mT = 1e3/fps;
+        if (fps < 1)
+            fps = 30;
+        mT = 1e3 / fps;
 
         mImageWidth = fSettings["Camera.width"];
         mImageHeight = fSettings["Camera.height"];
-        if(mImageWidth<1 || mImageHeight<1 )
+        if (mImageWidth < 1 || mImageHeight < 1)
         {
             mImageWidth = 640;
             mImageHeight = 480;
@@ -69,12 +67,12 @@ namespace ORB_SLAM2
         pangolin::OpenGlRenderState s_cam(
                 pangolin::ProjectionMatrix(1024, 768, mViewpointF, mViewpointF, 512, 389, 0.1, 1000),
                 pangolin::ModelViewLookAt(mViewpointX, mViewpointY, mViewpointZ, 0, 0, 0, 0.0, -1.0, 0.0)
-                );
+        );
 
         // 将命名的OpenGL可视化添加到窗口并提供3D操作。
         pangolin::View &d_cam = pangolin::CreateDisplay()
-                                .SetBounds(0.0, 1.0, pangolin::Attach::Pix(175), 1.0, -1024.0f/768.0f)
-                                .SetHandler(new pangolin::Handler3D(s_cam));
+                .SetBounds(0.0, 1.0, pangolin::Attach::Pix(175), 1.0, -1024.0f / 768.0f)
+                .SetHandler(new pangolin::Handler3D(s_cam));
 
         pangolin::OpenGlMatrix Twc;
         Twc.SetIdentity();
@@ -84,45 +82,46 @@ namespace ORB_SLAM2
         bool bFollow = true;
         bool bLocalizationMode = false;
 
-        while(1)
+        while (1)
         {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             mpMapDrawer->GetCurrentOpenGLCameraMatrix(Twc);
 
             // 跟随相机视角。
-            if(menuFollowCamera && bFollow)
+            if (menuFollowCamera && bFollow)
             {
                 s_cam.Follow(Twc);
             }
-            else if(menuFollowCamera && !bFollow)
+            else if (menuFollowCamera && !bFollow)
             {
-                s_cam.SetModelViewMatrix(pangolin::ModelViewLookAt(mViewpointX,mViewpointY,mViewpointZ, 0,0,0,0.0,-1.0, 0.0));
+                s_cam.SetModelViewMatrix(
+                        pangolin::ModelViewLookAt(mViewpointX, mViewpointY, mViewpointZ, 0, 0, 0, 0.0, -1.0, 0.0));
                 s_cam.Follow(Twc);
                 bFollow = true;
             }
-            else if(!menuFollowCamera && bFollow)
+            else if (!menuFollowCamera && bFollow)
             {
                 bFollow = false;
             }
 
-            if(menuLocalizationMode && !bLocalizationMode)
+            if (menuLocalizationMode && !bLocalizationMode)
             {
                 mpSystem->ActivateLocalizationMode();
-				bLocalizationMode = true;
+                bLocalizationMode = true;
             }
-            else if(!menuLocalizationMode && bLocalizationMode)
+            else if (!menuLocalizationMode && bLocalizationMode)
             {
                 mpSystem->DeactivateLocalizationMode();
-				bLocalizationMode = false;
+                bLocalizationMode = false;
             }
 
             d_cam.Activate(s_cam);
             glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
             mpMapDrawer->DrawCurrentCamera(Twc);
-            if(menuShowKeyFrames || menuShowGraph)
+            if (menuShowKeyFrames || menuShowGraph)
                 mpMapDrawer->DrawKeyFrames(menuShowKeyFrames, menuShowGraph);
-            if(menuShowPoints)
+            if (menuShowPoints)
                 mpMapDrawer->DrawMapPoints();
 
             pangolin::FinishFrame();
@@ -131,13 +130,13 @@ namespace ORB_SLAM2
             cv::imshow("SLAM: 当前帧", im);
             cv::waitKey(mT);    // 当前帧窗口更新速率。
 
-            if(menuReset)
+            if (menuReset)
             {
                 menuShowGraph = true;
                 menuShowKeyFrames = true;
                 menuShowPoints = true;
                 menuLocalizationMode = false;
-                if(bLocalizationMode)
+                if (bLocalizationMode)
                     mpSystem->DeactivateLocalizationMode();
                 bLocalizationMode = false;
                 bFollow = true;
@@ -146,23 +145,22 @@ namespace ORB_SLAM2
                 menuReset = false;
             }
 
-            if(Stop())
+            if (Stop())
             {
-                while(isStopped())
+                while (isStopped())
                 {
                     // 延时3000us。
                     std::this_thread::sleep_for(std::chrono::milliseconds(3));
                 }
             }
 
-            if(CheckFinish())
+            if (CheckFinish())
                 break;
         }
 
         SetFinish();
 
     }
-
 
 
     // 发送线程完成请求，设置标志位。
@@ -197,7 +195,7 @@ namespace ORB_SLAM2
     void Viewer::RequestStop()
     {
         unique_lock<mutex> lock(mMutexStop);
-        if(!mbStopped)
+        if (!mbStopped)
             mbStopRequested = true;
     }
 
@@ -214,9 +212,9 @@ namespace ORB_SLAM2
         unique_lock<mutex> lock2(mMutexFinish);
 
         // 发送完成求返回 false。
-        if(mbFinishRequested)
+        if (mbFinishRequested)
             return false;
-        else if(mbStopRequested)
+        else if (mbStopRequested)
         {
             mbStopped = true;
             mbStopRequested = false;
@@ -227,13 +225,11 @@ namespace ORB_SLAM2
 
     }
 
-void Viewer::Release()
-{
-    unique_lock<mutex> lock(mMutexStop);
-    mbStopped = false;
-}
-
-
+    void Viewer::Release()
+    {
+        unique_lock<mutex> lock(mMutexStop);
+        mbStopped = false;
+    }
 
 
 }   // namespace ORB_SLAM

@@ -16,45 +16,46 @@ namespace ORB_SLAM2
 {
 
     class Tracking;
+
     class Viewer;
 
 
     class FrameDrawer
     {
-        public:
+    public:
 
-            // 构造函数。
-            FrameDrawer(Map *pMap);
+        // 构造函数。
+        FrameDrawer(Map *pMap);
 
-            // 从最后一帧更新信息。
-            void Update(Tracking *pTracker);
+        // 从最后一帧更新信息。
+        void Update(Tracking *pTracker);
 
-            // 绘制最后一帧的信息。
-            cv::Mat DrawFrame();
+        // 绘制最后一帧的信息。
+        cv::Mat DrawFrame();
 
-        protected:
-	    
-	    // Vison+IMU
-	    double mStartTime;
-	    double mCurTime;
+    protected:
 
-            void DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText);
+        // Vison+IMU
+        double mStartTime;
+        double mCurTime;
 
-            // 帧信息
-            cv::Mat mIm;
-            int N;
-            vector<cv::KeyPoint> mvCurrentKeys;
-            vector<bool> mvbMap, mvbVO;
-            bool mbOnlyTracking;
-            int mnTracked, mnTrackedVO;
-            vector<cv::KeyPoint> mvIniKeys;
-            vector<int> mvIniMatches;
-            int mState;
+        void DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText);
+
+        // 帧信息
+        cv::Mat mIm;
+        int N;
+        vector<cv::KeyPoint> mvCurrentKeys;
+        vector<bool> mvbMap, mvbVO;
+        bool mbOnlyTracking;
+        int mnTracked, mnTrackedVO;
+        vector<cv::KeyPoint> mvIniKeys;
+        vector<int> mvIniMatches;
+        int mState;
 
 
-            Map *mpMap;
+        Map *mpMap;
 
-            std::mutex mMutex;
+        std::mutex mMutex;
 
     };
 

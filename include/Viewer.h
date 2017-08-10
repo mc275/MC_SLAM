@@ -12,57 +12,63 @@
 namespace ORB_SLAM2
 {
     class Tracking;
+
     class FrameDrawer;
+
     class MapDrawer;
+
     class System;
 
 
     class Viewer
     {
-        public:
-            // 构造函数。
-            Viewer(System *pSystem, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Tracking *pTracking, const string &strSettingPath);
+    public:
+        // 构造函数。
+        Viewer(System *pSystem, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Tracking *pTracking,
+               const string &strSettingPath);
 
-            // 主线程函数，绘制点，关键帧，当前相机的位姿和最后处理的一帧。
-            // 根据相机的帧率对绘制进行更新，这里采用Pangolin。
+        // 主线程函数，绘制点，关键帧，当前相机的位姿和最后处理的一帧。
+        // 根据相机的帧率对绘制进行更新，这里采用Pangolin。
 
-            void Run();
+        void Run();
 
-            void RequestFinish();
+        void RequestFinish();
 
-            void RequestStop();
+        void RequestStop();
 
-            bool isFinished();
+        bool isFinished();
 
-            bool isStopped();
+        bool isStopped();
 
-            void Release();
+        void Release();
 
 
-        private:
+    private:
 
-            bool Stop();
+        bool Stop();
 
-            System *mpSystem;
-            FrameDrawer *mpFrameDrawer;
-            MapDrawer *mpMapDrawer;
-            Tracking *mpTracker;
+        System *mpSystem;
+        FrameDrawer *mpFrameDrawer;
+        MapDrawer *mpMapDrawer;
+        Tracking *mpTracker;
 
-            // 1/fps in ms
-            double mT;
-            float mImageWidth, mImageHeight;
+        // 1/fps in ms
+        double mT;
+        float mImageWidth, mImageHeight;
 
-            float mViewpointX, mViewpointY, mViewpointZ, mViewpointF;
+        float mViewpointX, mViewpointY, mViewpointZ, mViewpointF;
 
-            bool CheckFinish();
-            void SetFinish();
-            bool mbFinishRequested;
-            bool mbFinished;
-            std::mutex mMutexFinish;
+        bool CheckFinish();
 
-            bool mbStopped;
-            bool mbStopRequested;
-            std::mutex mMutexStop;
+        void SetFinish();
+
+        bool mbFinishRequested;
+        bool mbFinished;
+        std::mutex mMutexFinish;
+
+        bool mbStopped;
+        bool mbStopRequested;
+        std::mutex mMutexStop;
 
     };
 

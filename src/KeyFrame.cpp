@@ -11,333 +11,280 @@
 namespace ORB_SLAM2
 {
     // 静态成员变量定义。
-    long unsigned int KeyFrame::nNextId=0;
+    long unsigned int KeyFrame::nNextId = 0;
 
-    
-    
+
     /************************VI SLAM*************************/
-    
-    void KeyFrame::UpdateNavStatePVRFromTcw(const cv::Mat& Tcw, const cv::Mat& Tbc)
+
+    void KeyFrame::UpdateNavStatePVRFromTcw(const cv::Mat &Tcw, const cv::Mat &Tbc)
     {
-	unique_lock<mutex> lock(mMutexNavState);
-	cv::Mat Twb = Converter::toCvMatInverse(Tbc*Tcw);
-	Matrix3d Rwb = Converter::toMatrix3d(Twb.rowRange(0,3).colRange(0,3));
-	Vector3d Pwb = Converter::toVector3d(Twb.rowRange(0,3).col(3)); 
-	
-	Matrix3d Rw1 = mNavState.Get_RotMatrix();
-	Vector3d Vw1 = mNavState.Get_V();
-	
-	// bV1 = bV2 ==> Rwb1^T*wV1 = Rwb2^T*wV2 ==> wV2 = Rwb2*Rwb1^T*wV1
-	Vector3d Vw2 = Rwb*Rw1.transpose()*Vw1;
-	
-	mNavState.Set_Pos(Pwb);
-	mNavState.Set_Rot(Rwb);
-	mNavState.Set_Vel(Vw2);
-	
+        unique_lock<mutex> lock(mMutexNavState);
+        cv::Mat Twb = Converter::toCvMatInverse(Tbc * Tcw);
+        Matrix3d Rwb = Converter::toMatrix3d(Twb.rowRange(0, 3).colRange(0, 3));
+        Vector3d Pwb = Converter::toVector3d(Twb.rowRange(0, 3).col(3));
+
+        Matrix3d Rw1 = mNavState.Get_RotMatrix();
+        Vector3d Vw1 = mNavState.Get_V();
+
+        // bV1 = bV2 ==> Rwb1^T*wV1 = Rwb2^T*wV2 ==> wV2 = Rwb2*Rwb1^T*wV1
+        Vector3d Vw2 = Rwb * Rw1.transpose() * Vw1;
+
+        mNavState.Set_Pos(Pwb);
+        mNavState.Set_Rot(Rwb);
+        mNavState.Set_Vel(Vw2);
+
     }
-    
-    
-    
-    void KeyFrame::SetInitialNavStateAndBias(const NavState& ns)
+
+
+    void KeyFrame::SetInitialNavStateAndBias(const NavState &ns)
     {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState = ns;
-	
-	mNavState.Set_BiasGyr(ns.Get_BiasGyr()+ns.Get_dBias_Gyr());
-	mNavState.Set_BiasAcc(ns.Get_BiasAcc()+ns.Get_dBias_Acc());
-	mNavState.Set_DeltaBiasGyr(Vector3d::Zero());
-	mNavState.Set_DeltaBiasAcc(Vector3d::Zero());
-	
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState = ns;
+
+        mNavState.Set_BiasGyr(ns.Get_BiasGyr() + ns.Get_dBias_Gyr());
+        mNavState.Set_BiasAcc(ns.Get_BiasAcc() + ns.Get_dBias_Acc());
+        mNavState.Set_DeltaBiasGyr(Vector3d::Zero());
+        mNavState.Set_DeltaBiasAcc(Vector3d::Zero());
+
     }
-    
-    
-    
+
+
     KeyFrame *KeyFrame::GetPrevKeyFrame(void)
     {
-	unique_lock<mutex> lock(mMutexPrevKF);
-	return mpPrevKeyFrame;
+        unique_lock<mutex> lock(mMutexPrevKF);
+        return mpPrevKeyFrame;
     }
-    
+
     KeyFrame *KeyFrame::GetNextKeyFrame(void)
     {
-	unique_lock<mutex> lock(mMutexNextKF);
-	return mpNextKeyFrame;
+        unique_lock<mutex> lock(mMutexNextKF);
+        return mpNextKeyFrame;
     }
 
-    
-    
-    void KeyFrame::SetPrevKeyFrame(KeyFrame* pKF)
+
+    void KeyFrame::SetPrevKeyFrame(KeyFrame *pKF)
     {
-	unique_lock<mutex> lock(mMutexPrevKF);
-	mpPrevKeyFrame = pKF;
+        unique_lock<mutex> lock(mMutexPrevKF);
+        mpPrevKeyFrame = pKF;
     }
-    
-    void KeyFrame::SetNextKeyFrame(KeyFrame* pKF)
+
+    void KeyFrame::SetNextKeyFrame(KeyFrame *pKF)
     {
-	unique_lock<mutex> lock(mMutexNextKF);
-	mpNextKeyFrame = pKF;
+        unique_lock<mutex> lock(mMutexNextKF);
+        mpNextKeyFrame = pKF;
     }
-    
-    
-    
+
+
     std::vector<IMUData> KeyFrame::GetVectorIMUData(void)
     {
-	unique_lock<mutex> lock(mMutexIMUData);
-	return mvIMUData;
+        unique_lock<mutex> lock(mMutexIMUData);
+        return mvIMUData;
     }
-    
-    void KeyFrame::AppendIMUDataToFront(KeyFrame* pPrevKF)
+
+    void KeyFrame::AppendIMUDataToFront(KeyFrame *pPrevKF)
     {
-	std::vector<IMUData> vimunew = pPrevKF->GetVectorIMUData();
-	{
-	    unique_lock<mutex> lock(mMutexIMUData);
-	    vimunew.insert(vimunew.end(), mvIMUData.begin(), mvIMUData.end());
-	    mvIMUData = vimunew;
-	}
+        std::vector<IMUData> vimunew = pPrevKF->GetVectorIMUData();
+        {
+            unique_lock<mutex> lock(mMutexIMUData);
+            vimunew.insert(vimunew.end(), mvIMUData.begin(), mvIMUData.end());
+            mvIMUData = vimunew;
+        }
     }
-    
-    
-    
+
+
     // 更新相机坐标系下的pose
-    void KeyFrame::UpdatePoseFromNS(const cv::Mat& Tbc)
+    void KeyFrame::UpdatePoseFromNS(const cv::Mat &Tbc)
     {
-	cv::Mat Rbc_ = Tbc.rowRange(0,3).colRange(0,3).clone();
-	cv::Mat Pbc_ = Tbc.rowRange(0,3).col(3).clone();
-	
-	cv::Mat Rwb_ = Converter::toCvMat(mNavState.Get_RotMatrix());
-	cv::Mat Pwb_ = Converter::toCvMat(mNavState.Get_P());
-	
-	cv::Mat Rcw_ = (Rwb_*Rbc_).t();
-	cv::Mat Pwc_ = Rwb_*Pbc_+Pwb_;
-	cv::Mat Pcw_ = -Rcw_*Pwc_;
-	
-	cv::Mat Tcw_ = cv::Mat::eye(4,4,CV_32F);
-	Rcw_.copyTo(Tcw_.rowRange(0,3).colRange(0,3));
-	Pcw_.copyTo(Tcw_.rowRange(0,3).col(3));
-	
-	SetPose(Tcw_);
-	
+        cv::Mat Rbc_ = Tbc.rowRange(0, 3).colRange(0, 3).clone();
+        cv::Mat Pbc_ = Tbc.rowRange(0, 3).col(3).clone();
+
+        cv::Mat Rwb_ = Converter::toCvMat(mNavState.Get_RotMatrix());
+        cv::Mat Pwb_ = Converter::toCvMat(mNavState.Get_P());
+
+        cv::Mat Rcw_ = (Rwb_ * Rbc_).t();
+        cv::Mat Pwc_ = Rwb_ * Pbc_ + Pwb_;
+        cv::Mat Pcw_ = -Rcw_ * Pwc_;
+
+        cv::Mat Tcw_ = cv::Mat::eye(4, 4, CV_32F);
+        Rcw_.copyTo(Tcw_.rowRange(0, 3).colRange(0, 3));
+        Pcw_.copyTo(Tcw_.rowRange(0, 3).col(3));
+
+        SetPose(Tcw_);
+
     }
-    
-    
-    
+
+
     // 更新导航状态
-    void KeyFrame::UpdateNavState(const IMUPreintegrator& imupreint, const Vector3d& gw)
+    void KeyFrame::UpdateNavState(const IMUPreintegrator &imupreint, const Vector3d &gw)
     {
-	unique_lock<mutex> lock(mMutexNavState);
-	Converter::updateNS(mNavState, imupreint, gw);
-    }
-    
-    void KeyFrame::SetNavState(const NavState& ns)
-    {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState = ns;
+        unique_lock<mutex> lock(mMutexNavState);
+        Converter::updateNS(mNavState, imupreint, gw);
     }
 
-    const NavState& KeyFrame::GetNavState(void)
+    void KeyFrame::SetNavState(const NavState &ns)
     {
-	unique_lock<mutex> lock(mMutexNavState);
-	return mNavState;
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState = ns;
     }
-    
-    
-    
+
+    const NavState &KeyFrame::GetNavState(void)
+    {
+        unique_lock<mutex> lock(mMutexNavState);
+        return mNavState;
+    }
+
+
     // 设置各导航状态
-    void KeyFrame::SetNavStateBiasGyr(const Vector3d& bg)
+    void KeyFrame::SetNavStateBiasGyr(const Vector3d &bg)
     {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState.Set_BiasGyr(bg);
-    }
-    
-    void KeyFrame::SetNavStateBiasAcc(const Vector3d& ba)
-    {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState.Set_BiasAcc(ba);
-    }
-    
-    void KeyFrame::SetNavStateVel(const Vector3d& vel)
-    {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState.Set_Vel(vel);
-    }
-    
-    void KeyFrame::SetNavStatePos(const Vector3d& pos)
-    {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState.Set_Pos(pos);
-    }
-    
-    void KeyFrame::SetNavStateRot(const Matrix3d& rot)
-    {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState.Set_Rot(rot);
-    }
-    
-    void KeyFrame::SetNavStateRot(const Sophus::SO3& rot)
-    {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState.Set_Rot(rot);
-    }
-    
-    void KeyFrame::SetNavStateDeltaBg(const Vector3d& dbg)
-    {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState.Set_DeltaBiasGyr(dbg);
-    }
-    
-    void KeyFrame::SetNavStateDeltaBa(const Vector3d& dba)
-    {
-	unique_lock<mutex> lock(mMutexNavState);
-	mNavState.Set_DeltaBiasAcc(dba);
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState.Set_BiasGyr(bg);
     }
 
-    
-    
+    void KeyFrame::SetNavStateBiasAcc(const Vector3d &ba)
+    {
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState.Set_BiasAcc(ba);
+    }
+
+    void KeyFrame::SetNavStateVel(const Vector3d &vel)
+    {
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState.Set_Vel(vel);
+    }
+
+    void KeyFrame::SetNavStatePos(const Vector3d &pos)
+    {
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState.Set_Pos(pos);
+    }
+
+    void KeyFrame::SetNavStateRot(const Matrix3d &rot)
+    {
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState.Set_Rot(rot);
+    }
+
+    void KeyFrame::SetNavStateRot(const Sophus::SO3 &rot)
+    {
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState.Set_Rot(rot);
+    }
+
+    void KeyFrame::SetNavStateDeltaBg(const Vector3d &dbg)
+    {
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState.Set_DeltaBiasGyr(dbg);
+    }
+
+    void KeyFrame::SetNavStateDeltaBa(const Vector3d &dba)
+    {
+        unique_lock<mutex> lock(mMutexNavState);
+        mNavState.Set_DeltaBiasAcc(dba);
+    }
+
+
     // 获取预积分结果
     const IMUPreintegrator &KeyFrame::GetIMUPreInt(void)
     {
-	unique_lock<mutex> lock(mMutexIMUData);
-	return mIMUPreInt;
-    }  
-    
-    // 计算预积分结果
+        unique_lock<mutex> lock(mMutexIMUData);
+        return mIMUPreInt;
+    }
+
+    // 计算上一帧关键帧到当前关键帧的预积分结果
     void KeyFrame::ComputePreInt(void)
     {
-	unique_lock<mutex> lock(mMutexIMUData);
-	
-	if(mpPrevKeyFrame == NULL)
-	{
-	    if(mnId != 0)
-	    {
-		cerr<<"previous KeyFrame is NULL, pre-integrator not changed. id: "<<mnId<<endl;
-	    }
-	    return ;
-	}
-	
-	else
-	{
-	    mIMUPreInt.reset();
-	    Vector3d bg = mpPrevKeyFrame->GetNavState().Get_BiasGyr();
-	    Vector3d ba = mpPrevKeyFrame->GetNavState().Get_BiasAcc();
-	    
-	    // 上一帧关键帧到第一个IMU数据的预积分值
-	    {
-		const IMUData &imu = mvIMUData.front();
-		double dt = imu._t - mpPrevKeyFrame->mTimeStamp;
-		mIMUPreInt.update(imu._g - bg, imu._a-ba, dt);
-		
-		if(dt < 0)
-		{
-		    cerr<<std::fixed<<std::setprecision(3)<<"1 dt = "<<dt<<", prev KF vs last imu time: "<<mpPrevKeyFrame->mTimeStamp<<" vs "<<imu._t<<endl;
-		    std::cerr.unsetf ( std::ios::showbase );
-		}
-		
-	    }
-	    
-	    for(size_t i=0; i<mvIMUData.size(); i++)
-	    {
-		const IMUData &imu = mvIMUData[i];
-		double nextt;
-		
-		if(i==mvIMUData.size()-1)
-		    nextt = mTimeStamp;
-		else
-		    nextt = mvIMUData[i+1]._t;
-		
-		double dt = nextt - imu._t;
-		
-		mIMUPreInt.update(imu._g-bg, imu._a-ba, dt);
-		
-		if(dt <= 0)
-		{
-		    cerr<<std::fixed<<std::setprecision(3)<<"dt = "<<dt<<", this vs next time: "<<imu._t<<" vs "<<nextt<<endl;
-		    std::cerr.unsetf ( std::ios::showbase );
-		}
-	    }
-	}
-	
-    }
-    
-    
-   
-    // VI-SLAM 构造函数
-    KeyFrame::KeyFrame(Frame& F, Map* pMap, KeyFrameDatabase* pKFDB, std::vector< IMUData > vIMUData, KeyFrame* pPrevKF):
-	mnFrameId(F.mnId), mTimeStamp(F.mTimeStamp), mnGridCols(FRAME_GRID_COLS), mnGridRows(FRAME_GRID_ROWS),
-	mfGridElementWidthInv(F.mfGridElementWidthInv), mfGridElementHeightInv(F.mfGridElementHeightInv),
-	mnTrackReferenceForFrame(0), mnFuseTargetForKF(0), mnBALocalForKF(0), mnBAFixedForKF(0),
-	mnLoopQuery(0), mnLoopWords(0), mnRelocQuery(0), mnRelocWords(0), mnBAGlobalForKF(0),
-	fx(F.fx), fy(F.fy), cx(F.cx), cy(F.cy), invfx(F.invfx), invfy(F.invfy),
-	mbf(F.mbf), mb(F.mb), mThDepth(F.mThDepth), N(F.N), mvKeys(F.mvKeys), mvKeysUn(F.mvKeysUn),
-	mvuRight(F.mvuRight), mvDepth(F.mvDepth), mDescriptors(F.mDescriptors.clone()),
-	mBowVec(F.mBowVec), mFeatVec(F.mFeatVec), mnScaleLevels(F.mnScaleLevels), mfScaleFactor(F.mfScaleFactor),
-	mfLogScaleFactor(F.mfLogScaleFactor), mvScaleFactors(F.mvScaleFactors), mvLevelSigma2(F.mvLevelSigma2),
-	mvInvLevelSigma2(F.mvInvLevelSigma2), mnMinX(F.mnMinX), mnMinY(F.mnMinY), mnMaxX(F.mnMaxX),
-	mnMaxY(F.mnMaxY), mK(F.mK), mvpMapPoints(F.mvpMapPoints), mpKeyFrameDB(pKFDB),
-	mpORBvocabulary(F.mpORBvocabulary), mbFirstConnection(true), mpParent(NULL), mbNotErase(false),
-	mbToBeErased(false), mbBad(false), mHalfBaseline(F.mb/2), mpMap(pMap)
-    {
-	mvIMUData = vIMUData;
-	
-	if(pPrevKF)
-	{
-	    pPrevKF->SetNextKeyFrame(this);
-	}
-	
-	mpPrevKeyFrame = pPrevKF;
-	mpNextKeyFrame = NULL;
-	
-	mnId = nNextId++;
-	
-	mGrid.resize(mnGridCols);
-	for(int i=0; i<mnGridCols; i++)
-	{
-	    mGrid[i].resize(mnGridRows);
-	    for(int j=0; j<mnGridRows; j++)
-		mGrid[i][j] = F.mGrid[i][j];
-	}
-	
-	SetPose(F.mTcw);
-	
+        unique_lock<mutex> lock(mMutexIMUData);
+
+        if (mpPrevKeyFrame == NULL)
+        {
+            if (mnId != 0)
+            {
+                cerr << "previous KeyFrame is NULL, pre-integrator not changed. id: " << mnId << endl;
+            }
+            return;
+        }
+
+        else
+        {
+            mIMUPreInt.reset();
+            Vector3d bg = mpPrevKeyFrame->GetNavState().Get_BiasGyr();
+            Vector3d ba = mpPrevKeyFrame->GetNavState().Get_BiasAcc();
+
+            // 上一帧关键帧到第一个IMU数据的预积分值
+            {
+                const IMUData &imu = mvIMUData.front();
+                double dt = imu._t - mpPrevKeyFrame->mTimeStamp;
+                mIMUPreInt.update(imu._g - bg, imu._a - ba, dt);
+
+                if (dt < 0)
+                {
+                    cerr << std::fixed << std::setprecision(3) << "1 dt = " << dt << ", prev KF vs last imu time: "
+                         << mpPrevKeyFrame->mTimeStamp << " vs " << imu._t << endl;
+                    std::cerr.unsetf(std::ios::showbase);
+                }
+
+            }
+
+            for (size_t i = 0; i < mvIMUData.size(); i++)
+            {
+                const IMUData &imu = mvIMUData[i];
+                double nextt;
+
+                if (i == mvIMUData.size() - 1)
+                    nextt = mTimeStamp;
+                else
+                    nextt = mvIMUData[i + 1]._t;
+
+                double dt = nextt - imu._t;
+
+                mIMUPreInt.update(imu._g - bg, imu._a - ba, dt);
+
+                if (dt <= 0)
+                {
+                    cerr << std::fixed << std::setprecision(3) << "dt = " << dt << ", this vs next time: " << imu._t
+                         << " vs " << nextt << endl;
+                    std::cerr.unsetf(std::ios::showbase);
+                }
+            }
+        }
+
     }
 
 
-
-
-    
-    
-    
-    /*********************************************************/
-    
-    
-    // 构造函数。
-    KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
-    mnFrameId(F.mnId), mTimeStamp(F.mTimeStamp), mnGridCols(FRAME_GRID_COLS), mnGridRows(FRAME_GRID_ROWS),
-    mfGridElementWidthInv(F.mfGridElementWidthInv), mfGridElementHeightInv(F.mfGridElementHeightInv),
-    mnTrackReferenceForFrame(0), mnFuseTargetForKF(0), mnBALocalForKF(0), mnBAFixedForKF(0),
-    mnLoopQuery(0), mnLoopWords(0), mnRelocQuery(0), mnRelocWords(0), mnBAGlobalForKF(0),
-    fx(F.fx), fy(F.fy), cx(F.cx), cy(F.cy), invfx(F.invfx), invfy(F.invfy),
-    mbf(F.mbf), mb(F.mb), mThDepth(F.mThDepth), N(F.N), mvKeys(F.mvKeys), mvKeysUn(F.mvKeysUn),
-    mvuRight(F.mvuRight), mvDepth(F.mvDepth), mDescriptors(F.mDescriptors.clone()),
-    mBowVec(F.mBowVec), mFeatVec(F.mFeatVec), mnScaleLevels(F.mnScaleLevels), mfScaleFactor(F.mfScaleFactor),
-    mfLogScaleFactor(F.mfLogScaleFactor), mvScaleFactors(F.mvScaleFactors), mvLevelSigma2(F.mvLevelSigma2),
-    mvInvLevelSigma2(F.mvInvLevelSigma2), mnMinX(F.mnMinX), mnMinY(F.mnMinY), mnMaxX(F.mnMaxX), 
-    mnMaxY(F.mnMaxY), mK(F.mK), mvpMapPoints(F.mvpMapPoints), mpKeyFrameDB(pKFDB),
-    mpORBvocabulary(F.mpORBvocabulary), mbFirstConnection(true), mpParent(NULL), mbNotErase(false),
-    mbToBeErased(false), mbBad(false), mHalfBaseline(F.mb/2), mpMap(pMap)
+    // VI-SLAM KF构造函数
+    KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB, std::vector<IMUData> vIMUData, KeyFrame *pPrevKF) :
+            mnFrameId(F.mnId), mTimeStamp(F.mTimeStamp), mnGridCols(FRAME_GRID_COLS), mnGridRows(FRAME_GRID_ROWS),
+            mfGridElementWidthInv(F.mfGridElementWidthInv), mfGridElementHeightInv(F.mfGridElementHeightInv),
+            mnTrackReferenceForFrame(0), mnFuseTargetForKF(0), mnBALocalForKF(0), mnBAFixedForKF(0),
+            mnLoopQuery(0), mnLoopWords(0), mnRelocQuery(0), mnRelocWords(0), mnBAGlobalForKF(0),
+            fx(F.fx), fy(F.fy), cx(F.cx), cy(F.cy), invfx(F.invfx), invfy(F.invfy),
+            mbf(F.mbf), mb(F.mb), mThDepth(F.mThDepth), N(F.N), mvKeys(F.mvKeys), mvKeysUn(F.mvKeysUn),
+            mvuRight(F.mvuRight), mvDepth(F.mvDepth), mDescriptors(F.mDescriptors.clone()),
+            mBowVec(F.mBowVec), mFeatVec(F.mFeatVec), mnScaleLevels(F.mnScaleLevels), mfScaleFactor(F.mfScaleFactor),
+            mfLogScaleFactor(F.mfLogScaleFactor), mvScaleFactors(F.mvScaleFactors), mvLevelSigma2(F.mvLevelSigma2),
+            mvInvLevelSigma2(F.mvInvLevelSigma2), mnMinX(F.mnMinX), mnMinY(F.mnMinY), mnMaxX(F.mnMaxX),
+            mnMaxY(F.mnMaxY), mK(F.mK), mvpMapPoints(F.mvpMapPoints), mpKeyFrameDB(pKFDB),
+            mpORBvocabulary(F.mpORBvocabulary), mbFirstConnection(true), mpParent(NULL), mbNotErase(false),
+            mbToBeErased(false), mbBad(false), mHalfBaseline(F.mb / 2), mpMap(pMap)
     {
-		// Test log
-		cerr<<"shouldn't call this KeyFrame()"<<endl;
-		
-		mpPrevKeyFrame = NULL;
-		mpNextKeyFrame = NULL;
+        mvIMUData = vIMUData;
+
+        if (pPrevKF)
+        {
+            pPrevKF->SetNextKeyFrame(this);
+        }
+
+        mpPrevKeyFrame = pPrevKF;
+        mpNextKeyFrame = NULL;
+
         mnId = nNextId++;
 
-        // 传递每个栅格的特征点数。
         mGrid.resize(mnGridCols);
-        for(int i=0; i<mnGridCols; i++)
+        for (int i = 0; i < mnGridCols; i++)
         {
             mGrid[i].resize(mnGridRows);
-            for(int j=0; j<mnGridRows; j++)
+            for (int j = 0; j < mnGridRows; j++)
                 mGrid[i][j] = F.mGrid[i][j];
         }
 
@@ -348,10 +295,53 @@ namespace ORB_SLAM2
 
 
 
+
+
+
+    /*********************************************************/
+
+
+    // 构造函数。
+    KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB) :
+            mnFrameId(F.mnId), mTimeStamp(F.mTimeStamp), mnGridCols(FRAME_GRID_COLS), mnGridRows(FRAME_GRID_ROWS),
+            mfGridElementWidthInv(F.mfGridElementWidthInv), mfGridElementHeightInv(F.mfGridElementHeightInv),
+            mnTrackReferenceForFrame(0), mnFuseTargetForKF(0), mnBALocalForKF(0), mnBAFixedForKF(0),
+            mnLoopQuery(0), mnLoopWords(0), mnRelocQuery(0), mnRelocWords(0), mnBAGlobalForKF(0),
+            fx(F.fx), fy(F.fy), cx(F.cx), cy(F.cy), invfx(F.invfx), invfy(F.invfy),
+            mbf(F.mbf), mb(F.mb), mThDepth(F.mThDepth), N(F.N), mvKeys(F.mvKeys), mvKeysUn(F.mvKeysUn),
+            mvuRight(F.mvuRight), mvDepth(F.mvDepth), mDescriptors(F.mDescriptors.clone()),
+            mBowVec(F.mBowVec), mFeatVec(F.mFeatVec), mnScaleLevels(F.mnScaleLevels), mfScaleFactor(F.mfScaleFactor),
+            mfLogScaleFactor(F.mfLogScaleFactor), mvScaleFactors(F.mvScaleFactors), mvLevelSigma2(F.mvLevelSigma2),
+            mvInvLevelSigma2(F.mvInvLevelSigma2), mnMinX(F.mnMinX), mnMinY(F.mnMinY), mnMaxX(F.mnMaxX),
+            mnMaxY(F.mnMaxY), mK(F.mK), mvpMapPoints(F.mvpMapPoints), mpKeyFrameDB(pKFDB),
+            mpORBvocabulary(F.mpORBvocabulary), mbFirstConnection(true), mpParent(NULL), mbNotErase(false),
+            mbToBeErased(false), mbBad(false), mHalfBaseline(F.mb / 2), mpMap(pMap)
+    {
+        // Test log
+        cerr << "shouldn't call this KeyFrame()" << endl;
+
+        mpPrevKeyFrame = NULL;
+        mpNextKeyFrame = NULL;
+        mnId = nNextId++;
+
+        // 传递每个栅格的特征点数。
+        mGrid.resize(mnGridCols);
+        for (int i = 0; i < mnGridCols; i++)
+        {
+            mGrid[i].resize(mnGridRows);
+            for (int j = 0; j < mnGridRows; j++)
+                mGrid[i][j] = F.mGrid[i][j];
+        }
+
+        SetPose(F.mTcw);
+
+    }
+
+
     // 计算mBowVec，并且将描述子分散在第4层，即mFeatVec记录了属于第i个node的ni个描述子。
     void KeyFrame::ComputeBoW()
     {
-        if(mBowVec.empty() || mFeatVec.empty())
+        if (mBowVec.empty() || mFeatVec.empty())
         {
             vector<cv::Mat> vCurrentDesc = Converter::toDescriptorVector(mDescriptors);
             mpORBvocabulary->transform(vCurrentDesc, mBowVec, mFeatVec, 4);
@@ -360,28 +350,26 @@ namespace ORB_SLAM2
     }
 
 
-
     // 设置位姿。
     void KeyFrame::SetPose(const cv::Mat &Tcw_)
     {
         unique_lock<mutex> lock(mMutexPose);
         Tcw_.copyTo(Tcw);
-        cv::Mat Rcw = Tcw.rowRange(0,3).colRange(0,3);
-        cv::Mat tcw = Tcw.rowRange(0,3).col(3);
+        cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
+        cv::Mat tcw = Tcw.rowRange(0, 3).col(3);
         cv::Mat Rwc = Rcw.t();
-        Ow = -Rwc*tcw;
+        Ow = -Rwc * tcw;
 
-        Twc = cv::Mat::eye(4,4,Tcw.type());
-        Rwc.copyTo(Twc.rowRange(0,3).colRange(0,3));
-        Ow.copyTo(Twc.rowRange(0,3).col(3));
+        Twc = cv::Mat::eye(4, 4, Tcw.type());
+        Rwc.copyTo(Twc.rowRange(0, 3).colRange(0, 3));
+        Ow.copyTo(Twc.rowRange(0, 3).col(3));
 
         // 相机坐标系下(左目)，立体相机中心的齐次坐标。
-        cv::Mat center = (cv::Mat_<float>(4,1) << mHalfBaseline, 0, 0, 1);
+        cv::Mat center = (cv::Mat_<float>(4, 1) << mHalfBaseline, 0, 0, 1);
         // 世界坐标系下，立体相机中心的齐次坐标。
-        Cw = Twc*center;
+        Cw = Twc * center;
 
     }
-
 
 
     // 获取位姿。
@@ -393,7 +381,6 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获取位姿的逆。
     cv::Mat KeyFrame::GetPoseInverse()
     {
@@ -401,7 +388,6 @@ namespace ORB_SLAM2
         return Twc.clone();
 
     }
-
 
 
     // 获取世界坐标系下相机坐标系原点坐标。
@@ -413,7 +399,6 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获取双目相机中点坐标(世界坐标系下)。
     cv::Mat KeyFrame::GetStereoCenter()
     {
@@ -423,25 +408,22 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获取当前关键帧的旋转矩阵。
     cv::Mat KeyFrame::GetRotation()
     {
         unique_lock<mutex> lock(mMutexPose);
-        return Tcw.rowRange(0,3).colRange(0,3).clone();
+        return Tcw.rowRange(0, 3).colRange(0, 3).clone();
 
     }
-
 
 
     // 获取当前关键帧帧的位移矩阵。
     cv::Mat KeyFrame::GetTranslation()
     {
         unique_lock<mutex> lock(mMutexPose);
-        return Tcw.rowRange(0,3).col(3).clone();
+        return Tcw.rowRange(0, 3).col(3).clone();
 
     }
-
 
 
     /* 为关键帧之间添加连接。
@@ -450,7 +432,7 @@ namespace ORB_SLAM2
     *  weight       权重，该关键帧与pKF共同观测到的3D点数量。
 
     *  更新mConnectedKeyFrameWeights
-    */ 
+    */
     void KeyFrame::AddConnection(KeyFrame *pKF, const int &weight)
     {
         {
@@ -458,9 +440,9 @@ namespace ORB_SLAM2
             // std::map::count 只能返回0或1。
             // 返回0表示mConnectedKeyFrameWeights中没有pKF,没有相连。
             // 返回1表示相连。
-            if(!mConnectedKeyFrameWeights.count(pKF))
+            if (!mConnectedKeyFrameWeights.count(pKF))
                 mConnectedKeyFrameWeights[pKF] = weight;
-            else if(mConnectedKeyFrameWeights[pKF] != weight)
+            else if (mConnectedKeyFrameWeights[pKF] != weight)
                 mConnectedKeyFrameWeights[pKF] = weight;
             else
                 return;
@@ -476,19 +458,20 @@ namespace ORB_SLAM2
     {
         unique_lock<mutex> lock(mMutexConnections);
         //http://stackoverflow.com/questions/3389648/difference-between-stdliststdpair-and-stdmap-in-c-stl
-        vector<pair<int, KeyFrame*>> vPairs;
+        vector<pair<int, KeyFrame *>> vPairs;
         vPairs.reserve(mConnectedKeyFrameWeights.size());
 
         // 取出所有连接的关键帧，mConnectedKeyFrameWeights的类型为std::map<KeyFrame*, int>, 
         // 而vpairs将共视权重放在前面，方便排序。
-        for(map<KeyFrame *, int>::iterator mit=mConnectedKeyFrameWeights.begin(), mend=mConnectedKeyFrameWeights.end(); mit!=mend; mit++)
+        for (map<KeyFrame *, int>::iterator mit = mConnectedKeyFrameWeights.begin(), mend = mConnectedKeyFrameWeights.end();
+             mit != mend; mit++)
             vPairs.push_back(make_pair(mit->second, mit->first));
 
         // 按照权重进行排序。 
         sort(vPairs.begin(), vPairs.end());
         list<KeyFrame *> lKFs;
         list<int> lWs;
-        for(size_t i=0, iend=vPairs.size(); i<iend; i++)
+        for (size_t i = 0, iend = vPairs.size(); i < iend; i++)
         {
             lKFs.push_front(vPairs[i].second);
             lWs.push_front(vPairs[i].first);
@@ -501,19 +484,18 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获得与该关键帧相连的关键帧。
     // @return 连接的关键帧。
     set<KeyFrame *> KeyFrame::GetConnectedKeyFrames()
     {
         unique_lock<mutex> lock(mMutexConnections);
         set<KeyFrame *> s;
-        for(map<KeyFrame *, int>::iterator mit=mConnectedKeyFrameWeights.begin(), mend=mConnectedKeyFrameWeights.end();mit!=mend; mit++)
-           s.insert(mit->first); 
+        for (map<KeyFrame *, int>::iterator mit = mConnectedKeyFrameWeights.begin(), mend = mConnectedKeyFrameWeights.end();
+             mit != mend; mit++)
+            s.insert(mit->first);
         return s;
 
     }
-
 
 
     // 获得与当前关键帧相连的关键帧(以按权重排序)。
@@ -526,19 +508,17 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获得与当前关键帧相连的前N个关键帧(按权值排序)。
     // 如果少于N个，返回所有关键帧。
     vector<KeyFrame *> KeyFrame::GetBestCovisibilityKeyFrames(const int &N)
     {
         unique_lock<mutex> lock(mMutexConnections);
-        if((int)mvpOrderedConnectedKeyFrames.size()<N)
+        if ((int) mvpOrderedConnectedKeyFrames.size() < N)
             return mvpOrderedConnectedKeyFrames;
         else
-            return vector<KeyFrame *>(mvpOrderedConnectedKeyFrames.begin(), mvpOrderedConnectedKeyFrames.begin()+N);
+            return vector<KeyFrame *>(mvpOrderedConnectedKeyFrames.begin(), mvpOrderedConnectedKeyFrames.begin() + N);
 
     }
-
 
 
     // 获得与当前关键帧连接的权重>=W的关键帧。
@@ -546,35 +526,34 @@ namespace ORB_SLAM2
     {
         unique_lock<mutex> lock(mMutexConnections);
 
-        if(mvpOrderedConnectedKeyFrames.empty())
+        if (mvpOrderedConnectedKeyFrames.empty())
             return vector<KeyFrame *>();
 
         // 从mvOrderedWeights找出第一个大于w的迭代器。
-        vector<int>::iterator it = upper_bound(mvOrderedWeights.begin(), mvOrderedWeights.end(), w, KeyFrame::weightComp);
+        vector<int>::iterator it = upper_bound(mvOrderedWeights.begin(), mvOrderedWeights.end(), w,
+                                               KeyFrame::weightComp);
         // 不存在。
-        if(it==mvOrderedWeights.end())
+        if (it == mvOrderedWeights.end())
             return vector<KeyFrame *>();
         else
         {
             int n = it - mvOrderedWeights.begin();
-            return vector<KeyFrame *>(mvpOrderedConnectedKeyFrames.begin(), mvpOrderedConnectedKeyFrames.begin()+n);
+            return vector<KeyFrame *>(mvpOrderedConnectedKeyFrames.begin(), mvpOrderedConnectedKeyFrames.begin() + n);
         }
 
     }
-
 
 
     // 获得当前关键帧与pKF的权重。
     int KeyFrame::GetWeight(KeyFrame *pKF)
     {
         unique_lock<mutex> lock(mMutexConnections);
-        if(mConnectedKeyFrameWeights.count(pKF))
+        if (mConnectedKeyFrameWeights.count(pKF))
             return mConnectedKeyFrameWeights[pKF];
         else
             return 0;
 
     }
-
 
 
     // 为该关键帧添加地图点pMP，索引idx。
@@ -594,11 +573,10 @@ namespace ORB_SLAM2
     void KeyFrame::EraseMapPointMatch(MapPoint *pMP)
     {
         int idx = pMP->GetIndexInKeyFrame(this);
-        if(idx>=0)
+        if (idx >= 0)
             mvpMapPoints[idx] = static_cast<MapPoint *>(NULL);
 
     }
-
 
 
     // 替换该关键帧地图点。
@@ -608,19 +586,18 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获得该关键帧所有地图点。
     set<MapPoint *> KeyFrame::GetMapPoints()
     {
         unique_lock<mutex> lock(mMutexFeatures);
-        set<MapPoint *>s;
-        for(size_t i=0, iend=mvpMapPoints.size(); i<iend; i++)
+        set<MapPoint *> s;
+        for (size_t i = 0, iend = mvpMapPoints.size(); i < iend; i++)
         {
-            if(!mvpMapPoints[i])
+            if (!mvpMapPoints[i])
                 continue;
 
             MapPoint *pMP = mvpMapPoints[i];
-            if(!pMP->isBad())
+            if (!pMP->isBad())
                 s.insert(pMP);
         }
         return s;
@@ -628,8 +605,7 @@ namespace ORB_SLAM2
     }
 
 
-
-    /* 
+    /*
     *  获得该关键帧中高质量的点云数量。
     *  minObs是一个阈值，大于minObs表示是高质量的MapPoint。 
     *  一个高质量的MapPoint会被多个KeyFrame观测到。
@@ -640,18 +616,18 @@ namespace ORB_SLAM2
         unique_lock<mutex> lock(mMutexFeatures);
 
         int nPoints = 0;
-        const bool bCheckObs = minObs>0;
-        for(int i=0; i<N; i++)
+        const bool bCheckObs = minObs > 0;
+        for (int i = 0; i < N; i++)
         {
             MapPoint *pMP = mvpMapPoints[i];
-            if(pMP)
+            if (pMP)
             {
-                if(!pMP->isBad())
+                if (!pMP->isBad())
                 {
-                    if(bCheckObs)
+                    if (bCheckObs)
                     {
                         // 判断地图点质量。
-                        if(mvpMapPoints[i]->Observations() >= minObs)
+                        if (mvpMapPoints[i]->Observations() >= minObs)
                             nPoints++;
                     }
                     else
@@ -665,7 +641,6 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获取该关键帧的所有MapPoints。
     vector<MapPoint *> KeyFrame::GetMapPointMatches()
     {
@@ -675,12 +650,11 @@ namespace ORB_SLAM2
     }
 
     // 获取该关键帧编号为idx的地图点。
-    MapPoint * KeyFrame::GetMapPoint(const size_t &idx)
+    MapPoint *KeyFrame::GetMapPoint(const size_t &idx)
     {
         unique_lock<mutex> lock(mMutexFeatures);
         return mvpMapPoints[idx];
     }
-
 
 
     /*
@@ -698,9 +672,9 @@ namespace ORB_SLAM2
 
         /*****1****/
         // 存储与当前关键帧存在共视关系的关键帧-共视权重。
-        map<KeyFrame*, int> KFcounter;
+        map<KeyFrame *, int> KFcounter;
 
-		// 存储当前关键帧的所有点云
+        // 存储当前关键帧的所有点云
         vector<MapPoint *> vpMP;
 
         // 提取关键帧的所有MapPoints。
@@ -711,57 +685,58 @@ namespace ORB_SLAM2
 
         // 统计可以观测到这些3D点的所有关键帧之间的共视程度。
         // 即统计当前关键帧都有多少关键帧与它存在共视关系，统计结果存储在KFcounter。
-        for(vector<MapPoint *>::iterator vit=vpMP.begin(), vend=vpMP.end(); vit!=vend; vit++)
+        for (vector<MapPoint *>::iterator vit = vpMP.begin(), vend = vpMP.end(); vit != vend; vit++)
         {
             MapPoint *pMP = *vit;
 
-            if(!pMP)
+            if (!pMP)
                 continue;
 
-            if(pMP->isBad())
+            if (pMP->isBad())
                 continue;
 
             // 对于每一个MapPoint，observations记录了可以观测到该MapPoint的所有关键帧和KF中Mappoint的索引。
             mapMapPointObs/*map<KeyFrame*, size_t>*/ observations = pMP->GetObservations();
 
-			// 建立当前关键帧的公视关系。
-            for(mapMapPointObs/*map<KeyFrame*, size_t>*/::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
+            // 建立当前关键帧的公视关系。
+            for (mapMapPointObs/*map<KeyFrame*, size_t>*/::iterator mit = observations.begin(), mend = observations.end();
+                 mit != mend; mit++)
             {
                 // 剔除自身，自身不算共视。
-                if(mit->first->mnId==mnId)
+                if (mit->first->mnId == mnId)
                     continue;
                 KFcounter[mit->first]++;
             }
         }
 
         // 没有共视关系，正常不应该出现。
-        if(KFcounter.empty())
+        if (KFcounter.empty())
             return;
 
 
 
         /*****2******/
-       
+
         int nmax = 0;
         KeyFrame *pKFmax = NULL;
         // 共视阈值。
-        int th =15;
+        int th = 15;
 
         // vPairs记录了与其他关键帧共视权重大于th的关键帧。
         // pair<int, KeyFrame *>权重写在前面，方便计算。
         vector<pair<int, KeyFrame *> > vPairs;
         vPairs.reserve(KFcounter.size());
-        for(map<KeyFrame *, int>::iterator mit=KFcounter.begin(), mend=KFcounter.end(); mit!=mend; mit++)
+        for (map<KeyFrame *, int>::iterator mit = KFcounter.begin(), mend = KFcounter.end(); mit != mend; mit++)
         {
             // 找到对应最大权重的关键帧。
-            if(mit->second > nmax)
+            if (mit->second > nmax)
             {
                 nmax = mit->second;
                 pKFmax = mit->first;
             }
 
             // 权重>阈值。
-            if(mit->second >= th)
+            if (mit->second >= th)
             {
 
                 vPairs.push_back(make_pair(mit->second, mit->first));
@@ -771,7 +746,7 @@ namespace ORB_SLAM2
         }
 
         // 与当前关键帧共视的关键帧没有大于共视阈值的，对权重最大的关键帧建立连接。
-        if(vPairs.empty())
+        if (vPairs.empty())
         {
             vPairs.push_back(make_pair(nmax, pKFmax));
             pKFmax->AddConnection(this, nmax);
@@ -781,7 +756,7 @@ namespace ORB_SLAM2
         sort(vPairs.begin(), vPairs.end());
         list<KeyFrame *> lKFs;
         list<int> lWs;
-        for(size_t i=0; i<vPairs.size(); i++)
+        for (size_t i = 0; i < vPairs.size(); i++)
         {
             lKFs.push_front(vPairs[i].second);
             lWs.push_front(vPairs[i].first);
@@ -798,7 +773,7 @@ namespace ORB_SLAM2
 
 
             // 更新生成树的连接。
-            if(mbFirstConnection && mnId != 0)
+            if (mbFirstConnection && mnId != 0)
             {
                 // 初始化该关键帧的父关键帧为共视程度最高的关键帧。
                 mpParent = mvpOrderedConnectedKeyFrames.front();
@@ -813,7 +788,7 @@ namespace ORB_SLAM2
 
 
     // 最小生成数 spanning tree。
-    
+
     // 添加子关键帧。 
     void KeyFrame::AddChild(KeyFrame *pKF)
     {
@@ -844,7 +819,7 @@ namespace ORB_SLAM2
     }
 
     // 获取父关键帧。
-    KeyFrame * KeyFrame::GetParent()
+    KeyFrame *KeyFrame::GetParent()
     {
         unique_lock<mutex> lockCon(mMutexConnections);
         return mpParent;
@@ -884,47 +859,46 @@ namespace ORB_SLAM2
     {
         {
             unique_lock<mutex> lock(mMutexConnections);
-            if(mspLoopEdges.empty())
+            if (mspLoopEdges.empty())
             {
                 mbNotErase = false;
             }
         }
 
         // mbToBeErased==true 表示之前不许擦除，现在再验证一次是否进行擦除。
-        if(mbToBeErased)
+        if (mbToBeErased)
         {
             SetBadFlag();
         }
     }
 
 
-
     // 设置当前关键帧为坏帧。
     void KeyFrame::SetBadFlag()
     {
-	
-	// test log, should comment
-	if(mbBad)
-	{
-	    vector<KeyFrame *> vKFinMap = mpMap->GetAllKeyFrames();
-	    std::set<KeyFrame*> KFinMap(vKFinMap.begin(),vKFinMap.end());
-	    if(KFinMap.count(this))
-	    {
-		cerr<<"this bad KF is still in map?"<<endl;
-		mpMap->EraseKeyFrame(this);
-	    }
-	    
-	    mpKeyFrameDB->erase(this);
-	    cerr<<"KeyFrame "<<mnId<<" is already bad. Set bad return"<<endl;
-	    return;
-	}
-	    
-	
+
+        // test log, should comment
+        if (mbBad)
+        {
+            vector<KeyFrame *> vKFinMap = mpMap->GetAllKeyFrames();
+            std::set<KeyFrame *> KFinMap(vKFinMap.begin(), vKFinMap.end());
+            if (KFinMap.count(this))
+            {
+                cerr << "this bad KF is still in map?" << endl;
+                mpMap->EraseKeyFrame(this);
+            }
+
+            mpKeyFrameDB->erase(this);
+            cerr << "KeyFrame " << mnId << " is already bad. Set bad return" << endl;
+            return;
+        }
+
+
         {
             unique_lock<mutex> lock(mMutexConnections);
-            if(mnId == 0)
+            if (mnId == 0)
                 return;
-            else if(mbNotErase)
+            else if (mbNotErase)
             {
                 // 只设置了标志为，实际并没有擦除。
                 mbToBeErased = true;
@@ -933,12 +907,13 @@ namespace ORB_SLAM2
         }
 
         // 1. 擦除其他关键帧与当前帧的连接。
-        for(map<KeyFrame *, int>::iterator mit=mConnectedKeyFrameWeights.begin(), mend=mConnectedKeyFrameWeights.end(); mit!=mend; mit++)
+        for (map<KeyFrame *, int>::iterator mit = mConnectedKeyFrameWeights.begin(), mend = mConnectedKeyFrameWeights.end();
+             mit != mend; mit++)
             mit->first->EraseConnection(this);
 
         // 2. 擦除当前帧对点云的观察关系。
-        for(size_t i=0; i<mvpMapPoints.size(); i++)
-            if(mvpMapPoints[i])
+        for (size_t i = 0; i < mvpMapPoints.size(); i++)
+            if (mvpMapPoints[i])
                 mvpMapPoints[i]->EraseObservation(this);
 
         {
@@ -954,7 +929,7 @@ namespace ORB_SLAM2
             sParentCandidates.insert(mpParent);
 
             // 如果当前关键有子关键帧，告诉这些子关键帧，父关键帧GG了，换人吧。
-            while(!mspChildrens.empty())
+            while (!mspChildrens.empty())
             {
                 bool bContinue = false;
 
@@ -963,26 +938,28 @@ namespace ORB_SLAM2
                 KeyFrame *pP;
 
                 // 遍历所有子关键帧，更新他们的父关键帧。
-                for(set<KeyFrame *>::iterator sit=mspChildrens.begin(), send=mspChildrens.end(); sit!=send; sit++)
+                for (set<KeyFrame *>::iterator sit = mspChildrens.begin(), send = mspChildrens.end();
+                     sit != send; sit++)
                 {
-                    KeyFrame* pKF = *sit;
-                    if(pKF->isBad())
+                    KeyFrame *pKF = *sit;
+                    if (pKF->isBad())
                         continue;
 
 
                     // 遍历每一个子关键帧的所有共视关键帧。
-                    vector<KeyFrame *> vpConnected = pKF->GetVectorCovisibleKeyFrames(); 
-                    for(size_t i=0, iend=vpConnected.size(); i<iend; i++)
+                    vector<KeyFrame *> vpConnected = pKF->GetVectorCovisibleKeyFrames();
+                    for (size_t i = 0, iend = vpConnected.size(); i < iend; i++)
                     {
-                        for(set<KeyFrame *>::iterator spcit=sParentCandidates.begin(), spcend=sParentCandidates.end();spcit!=spcend; spcit++)
+                        for (set<KeyFrame *>::iterator spcit = sParentCandidates.begin(), spcend = sParentCandidates.end();
+                             spcit != spcend; spcit++)
                         {
                             // 当前关键帧的父关键帧是否与它的子关键帧存在共视连接关系。
-                            if(vpConnected[i]->mnId == (*spcit)->mnId)
+                            if (vpConnected[i]->mnId == (*spcit)->mnId)
                             {
                                 // 获取当前关键帧的子关键帧的共视关键帧的权重。
                                 int w = pKF->GetWeight(vpConnected[i]);
                                 // 找到与所有mspChildrens中的子关键帧共视的最高权重的关键帧。
-                                if(w>max)
+                                if (w > max)
                                 {
                                     pC = pKF;
                                     pP = vpConnected[i];
@@ -995,7 +972,7 @@ namespace ORB_SLAM2
                 }
 
                 // 设置与当前关键帧的子关键帧具有最高共视程度的关键帧 作为子关键帧的父关键帧。
-                if(bContinue)
+                if (bContinue)
                 {
                     // 因为父关键帧GG了，子关键帧更新新的福关键帧。
                     pC->ChangeParent(pP);
@@ -1010,62 +987,57 @@ namespace ORB_SLAM2
 
             // 如果还有子关键帧没有找到父关键帧。
             // 直接把父关键帧的父关键帧作为自己的父关键帧。
-            if(!mspChildrens.empty())
-                for(set<KeyFrame *>::iterator sit=mspChildrens.begin(); sit!=mspChildrens.end(); sit++)
+            if (!mspChildrens.empty())
+                for (set<KeyFrame *>::iterator sit = mspChildrens.begin(); sit != mspChildrens.end(); sit++)
                 {
                     (*sit)->ChangeParent(mpParent);
                 }
 
             mpParent->EraseChild(this);
-            mTcp = Tcw*mpParent->GetPoseInverse();
+            mTcp = Tcw * mpParent->GetPoseInverse();
             mbBad = true;
         }
-        
+
         // 更新Prev/Next KF
         KeyFrame *pPrevKF = GetPrevKeyFrame();
-	KeyFrame *pNextKF = GetNextKeyFrame();
-        
-	if(pPrevKF)
-	    pPrevKF->SetNextKeyFrame(pNextKF);
-	if(pNextKF)
-	    pNextKF->SetPrevKeyFrame(pPrevKF);
-	
-	SetPrevKeyFrame(NULL);
-	SetNextKeyFrame(NULL);
-	
-	// test log
-	if(!pPrevKF)
-	    cerr<<"It's culling the first KF? pPrevKF=NULL. Current id: "<<mnId<<endl;
-	
-	if(!pNextKF)
-	    cerr<<"It's culling the latest KF? pNextKF=NULL. Current id: "<<mnId<<endl;
-	
-	if(pPrevKF && pNextKF)
-	{
-	    if(pPrevKF->isBad())
-		cerr<<"Prev KF isbad in setbad. previd: "<<pPrevKF->mnId<<", current id"<<mnId<<endl;
-	    if(pNextKF->isBad())
-		cerr<<"Next KF isbad in setbad. pnextid: "<<pNextKF->mnId<<", current id"<<mnId<<endl;
-	    
-	    
-	    pNextKF->AppendIMUDataToFront(this);
-	    
-	    pNextKF->ComputePreInt();
-	    
-	}
-	
-	
-	
+        KeyFrame *pNextKF = GetNextKeyFrame();
+
+        if (pPrevKF)
+            pPrevKF->SetNextKeyFrame(pNextKF);
+        if (pNextKF)
+            pNextKF->SetPrevKeyFrame(pPrevKF);
+
+        SetPrevKeyFrame(NULL);
+        SetNextKeyFrame(NULL);
+
+        // test log
+        if (!pPrevKF)
+            cerr << "It's culling the first KF? pPrevKF=NULL. Current id: " << mnId << endl;
+
+        if (!pNextKF)
+            cerr << "It's culling the latest KF? pNextKF=NULL. Current id: " << mnId << endl;
+
+        if (pPrevKF && pNextKF)
+        {
+            if (pPrevKF->isBad())
+                cerr << "Prev KF isbad in setbad. previd: " << pPrevKF->mnId << ", current id" << mnId << endl;
+            if (pNextKF->isBad())
+                cerr << "Next KF isbad in setbad. pnextid: " << pNextKF->mnId << ", current id" << mnId << endl;
+
+
+            pNextKF->AppendIMUDataToFront(this);
+
+            pNextKF->ComputePreInt();
+
+        }
+
 
         mpMap->EraseKeyFrame(this);
-        mpKeyFrameDB->erase(this); 
-	
-	    
+        mpKeyFrameDB->erase(this);
 
 
     }
 
-    
 
     // 返回关键帧质量标志mbBad。SetBadFlag()进行了设置。
     bool KeyFrame::isBad()
@@ -1075,14 +1047,13 @@ namespace ORB_SLAM2
     }
 
 
-
     // 擦除与pKF的连接关系。
     void KeyFrame::EraseConnection(KeyFrame *pKF)
     {
-        bool bUpdate =false;
+        bool bUpdate = false;
         {
             unique_lock<mutex> lock(mMutexConnections);
-            if(mConnectedKeyFrameWeights.count(pKF))
+            if (mConnectedKeyFrameWeights.count(pKF))
             {
                 mConnectedKeyFrameWeights.erase(pKF);
                 bUpdate = true;
@@ -1090,51 +1061,50 @@ namespace ORB_SLAM2
         }
 
         // 更新连接关系排序。
-        if(bUpdate)
+        if (bUpdate)
             UpdateBestCovisibles();
 
     }
 
 
-
     // 获取该关键帧中制定区域的特征。
-    vector<size_t> KeyFrame::GetFeaturesInArea(const float &x, const float &y, const float &r) const 
+    vector<size_t> KeyFrame::GetFeaturesInArea(const float &x, const float &y, const float &r) const
     {
         vector<size_t> vIndices;
         vIndices.reserve(N);
 
         // floor向下取整，mfGridElementWidthInv为每个像素在横坐标占多少格子。
-        const int nMinCellX = max(0, (int)floor((x-mnMinX-r)*mfGridElementWidthInv));
-        if(nMinCellX >= mnGridCols)
+        const int nMinCellX = max(0, (int) floor((x - mnMinX - r) * mfGridElementWidthInv));
+        if (nMinCellX >= mnGridCols)
             return vIndices;
 
         // ceil向上取整。
-        const int nMaxCellX = min((int)mnGridCols-1, (int)ceil((x-mnMinX+r)*mfGridElementWidthInv));
-        if(nMaxCellX < 0)
+        const int nMaxCellX = min((int) mnGridCols - 1, (int) ceil((x - mnMinX + r) * mfGridElementWidthInv));
+        if (nMaxCellX < 0)
             return vIndices;
-        
+
         // mfGridElementHeightInv为每个像素在纵坐标占多少个格子
-        const int nMinCellY = max(0, (int)floor((y-mnMinY-r)*mfGridElementHeightInv));
-        if(nMinCellY >= mnGridRows)
+        const int nMinCellY = max(0, (int) floor((y - mnMinY - r) * mfGridElementHeightInv));
+        if (nMinCellY >= mnGridRows)
             return vIndices;
 
-        const int nMaxCellY = min((int)mnGridRows-1, (int)ceil((y-mnMinY+r)*mfGridElementHeightInv));
-        if(nMaxCellY < 0)
+        const int nMaxCellY = min((int) mnGridRows - 1, (int) ceil((y - mnMinY + r) * mfGridElementHeightInv));
+        if (nMaxCellY < 0)
             return vIndices;
 
-        for(int ix = nMinCellX; ix<=nMaxCellX; ix++)
+        for (int ix = nMinCellX; ix <= nMaxCellX; ix++)
         {
-            for(int iy = nMinCellY; iy<=nMaxCellY; iy++)
+            for (int iy = nMinCellY; iy <= nMaxCellY; iy++)
             {
                 // mGrid[ix][iy]存储着每个格子的特征点数。
                 const vector<size_t> vCell = mGrid[ix][iy];
-                for(size_t j=0, jend=vCell.size(); j<jend; j++)
+                for (size_t j = 0, jend = vCell.size(); j < jend; j++)
                 {
                     const cv::KeyPoint &kpUn = mvKeysUn[vCell[j]];
                     const float distx = kpUn.pt.x - x;
                     const float disty = kpUn.pt.y - y;
 
-                    if(fabs(distx)<r && fabs(disty)<r)
+                    if (fabs(distx) < r && fabs(disty) < r)
                         vIndices.push_back(vCell[j]);
                 }
             }
@@ -1145,13 +1115,11 @@ namespace ORB_SLAM2
     }
 
 
-
     // 像素点是否在图像内。
-    bool KeyFrame::IsInImage(const float &x, const float &y) const 
+    bool KeyFrame::IsInImage(const float &x, const float &y) const
     {
-        return (x>=mnMinX && x<mnMaxX && y>=mnMinY && y<mnMaxY);
+        return (x >= mnMinX && x < mnMaxX && y >= mnMinY && y < mnMaxY);
     }
-
 
 
     /**
@@ -1163,7 +1131,7 @@ namespace ORB_SLAM2
     cv::Mat KeyFrame::UnprojectStereo(int i)
     {
         const float z = mvDepth[i];
-        if(z>0)
+        if (z > 0)
         {
             // 由2维图像反投影到相机坐标系
             // mvDepth是在ComputeStereoMatches函数中求取的
@@ -1172,20 +1140,19 @@ namespace ORB_SLAM2
             // 在ComputeStereoMatches函数中应该对校正后的特征点求深度？？ (wubo???)
             const float u = mvKeys[i].pt.x;
             const float v = mvKeys[i].pt.y;
-            const float x = (u-cx)*z*invfx;
-            const float y = (v-cy)*z*invfy;
-            cv::Mat x3Dc = (cv::Mat_<float>(3,1) << x, y, z);
+            const float x = (u - cx) * z * invfx;
+            const float y = (v - cy) * z * invfy;
+            cv::Mat x3Dc = (cv::Mat_<float>(3, 1) << x, y, z);
 
             unique_lock<mutex> lock(mMutexPose);
             // 由相机坐标系转换到世界坐标系
             // Twc为相机坐标系到世界坐标系的变换矩阵
             // Twc.rosRange(0,3).colRange(0,3)取Twc矩阵的前3行与前3列
-            return Twc.rowRange(0,3).colRange(0,3)*x3Dc+Twc.rowRange(0,3).col(3);
+            return Twc.rowRange(0, 3).colRange(0, 3) * x3Dc + Twc.rowRange(0, 3).col(3);
         }
         else
             return cv::Mat();
     }
-
 
 
     /*
@@ -1206,27 +1173,26 @@ namespace ORB_SLAM2
 
         vector<float> vDepths;
         vDepths.reserve(N);
-        cv::Mat Rcw2 = Tcw_.row(2).colRange(0,3);
+        cv::Mat Rcw2 = Tcw_.row(2).colRange(0, 3);
         Rcw2 = Rcw2.t();
-        float zcw = Tcw_.at<float>(2,3);
-        for(int i=0; i<N; i++)
+        float zcw = Tcw_.at<float>(2, 3);
+        for (int i = 0; i < N; i++)
         {
-            if(mvpMapPoints[i])
+            if (mvpMapPoints[i])
             {
                 MapPoint *pMP = mvpMapPoints[i];
                 cv::Mat x3Dw = pMP->GetWorldPos();
                 // R*x3Dw+t的第三行。
-                float z = Rcw2.dot(x3Dw)+zcw;
+                float z = Rcw2.dot(x3Dw) + zcw;
                 vDepths.push_back(z);
             }
         }
-        
+
         sort(vDepths.begin(), vDepths.end());
 
-        return vDepths[(vDepths.size()-1)/q];
+        return vDepths[(vDepths.size() - 1) / q];
 
     }
-
 
 
 }   // namespace ORB_SLAM2

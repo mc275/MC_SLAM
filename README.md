@@ -1,14 +1,21 @@
 # VI-SLAM
-This is not completed for VISLAM
 
-Completed
+Add the IMU Data class and Preintegrator lib, image and imu synchronize for rosbag
+Add the lib into the SLAM  
+Add the data access not used ros framework
 
-	the IMU Data class and Preintegrator lib, image and imu synchronize for rosbag
-    add the lib into the SLAM  
+build and execute the projecte
+no_ros:
+    cd ORB_MC__SLAM/
+    sh build.sh
+    ./Examples/Monocular/mono_EuRoC_vins Vocabulary/ORBvoc.bin config/euroc.yaml
 
-To do
+ros:
+add the ROS_PACKAGE_PATH for VIO
+    cd ORB_MC_SLAM/
+    sh build_all.sh
+    roslaunch VIO testeuroc.launch 
 
-    add the data access not used ros framework
 
 *****
 
@@ -21,8 +28,9 @@ Build with `build.sh`. Modify the path in `config/euroc.yaml`.
 Below is the primary README of ORBSLAM2.
 
 The rosbag need to be played when real flag is 1
-*****
 
+The *****principle of Preintergator reference to 
+    Forster C, Carlone L, Dellaert F, et al. On-Manifold Preintegration for Real-Time Visual--Inertial Odometry. IEEE Transactions on Robotics, 2017, 33(1): 1-21
 # ORB-SLAM2
 **Authors:** [Raul Mur-Artal](http://webdiis.unizar.es/~raulmur/), [Juan D. Tardos](http://webdiis.unizar.es/~jdtardos/), [J. M. M. Montiel](http://webdiis.unizar.es/~josemari/) and [Dorian Galvez-Lopez](http://doriangalvez.com/) ([DBoW2](https://github.com/dorian3d/DBoW2))
 

@@ -4,6 +4,7 @@
 #IDE Project
 .kdev4/
 *.kdev4
+*.idea
 
 # Compiled Object files
 *.slo
@@ -13,6 +14,8 @@
 build
 tmp
 *~
+cmake-build-debug
+
 # Precompiled Headers
 *.gch
 *.pch
@@ -27,7 +30,7 @@ tmp
 *.smod
 *.bak
 *.yaml
-euroc.yaml
+*.log
 
 # Compiled Static libraries
 *.lai

@@ -3,7 +3,7 @@ import argparse
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
-filepath = '/home/mc/My_Code/ORB_MC_VI/evaluate/';
+filepath = './';
 #filename = filepath+'CameraFrameNavStateTrajectory2.txt';
 # filename1 = filepath+'GroundTruth.txt';
 # filename2 = filepath+'mono_IMU_align.txt';

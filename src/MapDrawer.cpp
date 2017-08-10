@@ -1,4 +1,3 @@
- 
 
 
 
@@ -12,7 +11,7 @@
 namespace ORB_SLAM2
 {
 
-    MapDrawer::MapDrawer(Map *pMap, const string &strSettingPath): mpMap(pMap)
+    MapDrawer::MapDrawer(Map *pMap, const string &strSettingPath) : mpMap(pMap)
     {
         cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
 
@@ -27,7 +26,6 @@ namespace ORB_SLAM2
     }
 
 
-
     // 绘制地图中的点云。
     void MapDrawer::DrawMapPoints()
     {
@@ -36,7 +34,7 @@ namespace ORB_SLAM2
 
         set<MapPoint *> spRefMPs(vpRefMPs.begin(), vpRefMPs.end());
 
-        if(vpMPs.empty())
+        if (vpMPs.empty())
             return;
 
         // 对于所有的地图点云，显示为黑色。
@@ -44,24 +42,24 @@ namespace ORB_SLAM2
         glBegin(GL_POINTS);
         glColor3f(0.0, 0.0, 0.0);
 
-        for(size_t i=0, iend=vpMPs.size(); i<iend; i++)
+        for (size_t i = 0, iend = vpMPs.size(); i < iend; i++)
         {
             // 不包括坏点和参考点。
-            if(vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i]))
+            if (vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i]))
                 continue;
 
             cv::Mat pos = vpMPs[i]->GetWorldPos();
-            glVertex3f(pos.at<float>(0), pos.at<float>(1), pos.at<float>(2) );
+            glVertex3f(pos.at<float>(0), pos.at<float>(1), pos.at<float>(2));
         }
-		glEnd();
+        glEnd();
         // 参考点显示为红色。
         glPointSize(mPointSize);
         glBegin(GL_POINTS);
         glColor3f(1.0, 0.0, 0.0);
 
-        for(set<MapPoint *>::iterator sit=spRefMPs.begin(), send=spRefMPs.end(); sit!=send; sit++)
+        for (set<MapPoint *>::iterator sit = spRefMPs.begin(), send = spRefMPs.end(); sit != send; sit++)
         {
-            if((*sit)->isBad())
+            if ((*sit)->isBad())
                 continue;
 
             cv::Mat pos = (*sit)->GetWorldPos();
@@ -72,19 +70,18 @@ namespace ORB_SLAM2
     }
 
 
-
     // 绘制地图中的关键帧。
     void MapDrawer::DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph)
     {
         const float &w = mKeyFrameSize;
-        const float h = w*0.75;
-        const float z = w*0.6;
+        const float h = w * 0.75;
+        const float z = w * 0.6;
 
         const vector<KeyFrame *> vpKFs = mpMap->GetAllKeyFrames();
 
-        if(bDrawKF)
+        if (bDrawKF)
         {
-            for(size_t i=0; i<vpKFs.size(); i++)
+            for (size_t i = 0; i < vpKFs.size(); i++)
             {
                 KeyFrame *pKF = vpKFs[i];
 
@@ -109,7 +106,7 @@ namespace ORB_SLAM2
 
                 glVertex3f(w, h, z);
                 glVertex3f(w, -h, z);
-                
+
                 glVertex3f(-w, h, z);
                 glVertex3f(-w, -h, z);
 
@@ -124,22 +121,23 @@ namespace ORB_SLAM2
             }
         }
 
-        if(bDrawGraph)
+        if (bDrawGraph)
         {
             glLineWidth(mGraphLineWidth);
             glColor4f(0.0f, 1.0f, 0.0f, 0.6f);
             glBegin(GL_LINES);
 
-            for(size_t i=0; i<vpKFs.size(); i++)
+            for (size_t i = 0; i < vpKFs.size(); i++)
             {
                 // Covisibility图。 
                 const vector<KeyFrame *> vCovKFs = vpKFs[i]->GetCovisiblesByWeight(100);
                 cv::Mat Ow = vpKFs[i]->GetCameraCenter();
-                if(!vCovKFs.empty())
+                if (!vCovKFs.empty())
                 {
-                    for(vector<KeyFrame *>::const_iterator vit=vCovKFs.begin(), vend=vCovKFs.end(); vit!=vend; vit++)
+                    for (vector<KeyFrame *>::const_iterator vit = vCovKFs.begin(), vend = vCovKFs.end();
+                         vit != vend; vit++)
                     {
-                        if( (*vit)->mnId < vpKFs[i]->mnId)
+                        if ((*vit)->mnId < vpKFs[i]->mnId)
                             continue;
                         cv::Mat Ow2 = (*vit)->GetCameraCenter();
                         glVertex3f(Ow.at<float>(0), Ow.at<float>(1), Ow.at<float>(2));
@@ -149,7 +147,7 @@ namespace ORB_SLAM2
 
                 // 生成树 spanning tree。
                 KeyFrame *pParent = vpKFs[i]->GetParent();
-                if(pParent)
+                if (pParent)
                 {
                     cv::Mat Owp = pParent->GetCameraCenter();
                     glVertex3f(Ow.at<float>(0), Ow.at<float>(1), Ow.at<float>(2));
@@ -158,9 +156,9 @@ namespace ORB_SLAM2
 
                 // 闭环。
                 set<KeyFrame *> sLoopKFs = vpKFs[i]->GetLoopEdges();
-                for(set<KeyFrame *>::iterator sit=sLoopKFs.begin(), send=sLoopKFs.end(); sit!=send; sit++)
+                for (set<KeyFrame *>::iterator sit = sLoopKFs.begin(), send = sLoopKFs.end(); sit != send; sit++)
                 {
-                    if((*sit)->mnId < vpKFs[i]->mnId)
+                    if ((*sit)->mnId < vpKFs[i]->mnId)
                         continue;
                     cv::Mat Owl = (*sit)->GetCameraCenter();
                     glVertex3f(Ow.at<float>(0), Ow.at<float>(1), Ow.at<float>(2));
@@ -173,25 +171,24 @@ namespace ORB_SLAM2
     }
 
 
-
     // 绘制当前相机的位置。
     void MapDrawer::DrawCurrentCamera(pangolin::OpenGlMatrix &Twc)
     {
 
         const float &w = mCameraSize;
-        const float h = w*0.75;
-        const float z = w*0.6;
+        const float h = w * 0.75;
+        const float z = w * 0.6;
 
         glPushMatrix();
 
-    #ifdef HAVE_GLES
+#ifdef HAVE_GLES
         glMultMatrixf(Twc.m);
-    #else
+#else
         glMultMatrixd(Twc.m);
-    #endif
+#endif
 
         glLineWidth(mCameraLineWidth);
-	//glColor3f(0.0f, 1.0f, 0.0f);
+        //glColor3f(0.0f, 1.0f, 0.0f);
         glColor3f(1.0f, 0.0f, 1.0f);
         glBegin(GL_LINES);
         glVertex3f(0, 0, 0);
@@ -220,7 +217,6 @@ namespace ORB_SLAM2
     }
 
 
-
     // 设置当前的相机位姿。
     void MapDrawer::SetCurrentCameraPose(const cv::Mat &Tcw)
     {
@@ -229,34 +225,33 @@ namespace ORB_SLAM2
     }
 
 
-
-    // 当前相机到世界坐标系的变换矩阵。 
+    // 当前相机到世界坐标系的变换矩阵。
     void MapDrawer::GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M)
     {
-        if(!mCameraPose.empty())
+        if (!mCameraPose.empty())
         {
             cv::Mat Rwc(3, 3, CV_32F);
             cv::Mat twc(3, 1, CV_32F);
 
             {
                 unique_lock<mutex> lock(mMutexCamera);
-                Rwc = mCameraPose.rowRange(0,3).colRange(0,3).t();
-                twc = -Rwc*mCameraPose.rowRange(0,3).col(3);
+                Rwc = mCameraPose.rowRange(0, 3).colRange(0, 3).t();
+                twc = -Rwc * mCameraPose.rowRange(0, 3).col(3);
             }
 
-            M.m[0] = Rwc.at<float>(0,0);
-            M.m[1] = Rwc.at<float>(1,0);
-            M.m[2] = Rwc.at<float>(2,0);
+            M.m[0] = Rwc.at<float>(0, 0);
+            M.m[1] = Rwc.at<float>(1, 0);
+            M.m[2] = Rwc.at<float>(2, 0);
             M.m[3] = 0.0;
 
-            M.m[4] = Rwc.at<float>(0,1);
-            M.m[5] = Rwc.at<float>(1,1);
-            M.m[6] = Rwc.at<float>(2,1);
+            M.m[4] = Rwc.at<float>(0, 1);
+            M.m[5] = Rwc.at<float>(1, 1);
+            M.m[6] = Rwc.at<float>(2, 1);
             M.m[7] = 0.0;
 
-            M.m[8] = Rwc.at<float>(0,2);
-            M.m[9] = Rwc.at<float>(1,2);
-            M.m[10] = Rwc.at<float>(2,2);
+            M.m[8] = Rwc.at<float>(0, 2);
+            M.m[9] = Rwc.at<float>(1, 2);
+            M.m[10] = Rwc.at<float>(2, 2);
             M.m[11] = 0.0;
 
             M.m[12] = twc.at<float>(0);
@@ -269,8 +264,6 @@ namespace ORB_SLAM2
             M.SetIdentity();
 
     }
-
-
 
 
 }   // namespace ORB_SLAM2

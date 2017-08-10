@@ -35,9 +35,11 @@ void LoadImages(const string &strImagePath, const string &strPathTimes,
 
 int main(int argc, char **argv)
 {
-    if(argc != 5)
+    if (argc != 5)
     {
-        cerr << endl << "Usage: ./mono_EuRoC path_to_vocabulary path_to_settings path_to_image_folder path_to_times_file" << endl;
+        cerr << endl
+             << "Usage: ./mono_EuRoC path_to_vocabulary path_to_settings path_to_image_folder path_to_times_file"
+             << endl;
         return 1;
     }
 
@@ -48,14 +50,14 @@ int main(int argc, char **argv)
 
     int nImages = vstrImageFilenames.size();
 
-    if(nImages<=0)
+    if (nImages <= 0)
     {
         cerr << "ERROR: Failed to load images" << endl;
         return 1;
     }
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::MONOCULAR,true);
+    ORB_SLAM2::System SLAM(argv[1], argv[2], ORB_SLAM2::System::MONOCULAR, true);
 
     // Vector for tracking time statistics
     vector<float> vTimesTrack;
@@ -67,16 +69,16 @@ int main(int argc, char **argv)
 
     // Main loop
     cv::Mat im;
-    for(int ni=0; ni<nImages; ni++)
+    for (int ni = 0; ni < nImages; ni++)
     {
         // Read image from file
-        im = cv::imread(vstrImageFilenames[ni],CV_LOAD_IMAGE_UNCHANGED);
+        im = cv::imread(vstrImageFilenames[ni], CV_LOAD_IMAGE_UNCHANGED);
         double tframe = vTimestamps[ni];
 
-        if(im.empty())
+        if (im.empty())
         {
             cerr << endl << "Failed to load image at: "
-                 <<  vstrImageFilenames[ni] << endl;
+                 << vstrImageFilenames[ni] << endl;
             return 1;
         }
 
@@ -87,7 +89,7 @@ int main(int argc, char **argv)
 #endif
 
         // Pass the image to the SLAM system
-        SLAM.TrackMonocular(im,tframe);
+        SLAM.TrackMonocular(im, tframe);
 
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -95,34 +97,34 @@ int main(int argc, char **argv)
         std::chrono::monotonic_clock::time_point t2 = std::chrono::monotonic_clock::now();
 #endif
 
-        double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+        double ttrack = std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
 
-        vTimesTrack[ni]=ttrack;
+        vTimesTrack[ni] = ttrack;
 
         // Wait to load the next frame
-        double T=0;
-        if(ni<nImages-1)
-            T = vTimestamps[ni+1]-tframe;
-        else if(ni>0)
-            T = tframe-vTimestamps[ni-1];
+        double T = 0;
+        if (ni < nImages - 1)
+            T = vTimestamps[ni + 1] - tframe;
+        else if (ni > 0)
+            T = tframe - vTimestamps[ni - 1];
 
-        if(ttrack<T)
-            usleep((T-ttrack)*1e6);
+        if (ttrack < T)
+            usleep((T - ttrack) * 1e6);
     }
 
     // Stop all threads
     SLAM.Shutdown();
 
     // Tracking time statistics
-    sort(vTimesTrack.begin(),vTimesTrack.end());
+    sort(vTimesTrack.begin(), vTimesTrack.end());
     float totaltime = 0;
-    for(int ni=0; ni<nImages; ni++)
+    for (int ni = 0; ni < nImages; ni++)
     {
-        totaltime+=vTimesTrack[ni];
+        totaltime += vTimesTrack[ni];
     }
     cout << "-------" << endl << endl;
-    cout << "median tracking time: " << vTimesTrack[nImages/2] << endl;
-    cout << "mean tracking time: " << totaltime/nImages << endl;
+    cout << "median tracking time: " << vTimesTrack[nImages / 2] << endl;
+    cout << "mean tracking time: " << totaltime / nImages << endl;
 
     // Save camera trajectory
     SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
@@ -136,23 +138,23 @@ void LoadImages(const string &strImagePath, const string &strPathTimes,
     ifstream fTimes;
     fTimes.open(strPathTimes.c_str());
     string s0;
-    getline(fTimes,s0);
+    getline(fTimes, s0);
     vTimeStamps.reserve(5000);
     vstrImages.reserve(5000);
-    while(!fTimes.eof())
+    while (!fTimes.eof())
     {
         string s;
-        getline(fTimes,s);
-        if(!s.empty())
+        getline(fTimes, s);
+        if (!s.empty())
         {
             stringstream ss;
-	    ss << s;
+            ss << s;
             double t;
             string sRGB;
             ss >> t;
-	    ss >> sRGB;
+            ss >> sRGB;
             vstrImages.push_back(strImagePath + "/" + sRGB);
-            vTimeStamps.push_back(t/1e9);
+            vTimeStamps.push_back(t / 1e9);
 
         }
     }

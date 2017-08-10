@@ -20,46 +20,54 @@
 
 namespace ORB_SLAM2
 {
-   
-class Viewer;
-class FrameDrawer;
-class Map;
-class Tracking;
-class LocalMapping;
-class LoopClosing;
-    
-class System
-{
-public:
-    bool bLocalMapAcceptKF(void);
-    void SaveKeyFrameTrajectoryNavState(const string &filename);
-    
+
+    class Viewer;
+
+    class FrameDrawer;
+
+    class Map;
+
+    class Tracking;
+
+    class LocalMapping;
+
+    class LoopClosing;
+
+    class System
+    {
+    public:
+        bool bLocalMapAcceptKF(void);
+
+        void SaveKeyFrameTrajectoryNavState(const string &filename);
+
     public:
         // 输入传感器。
         enum eSensor
         {
-            MONOCULAR=0,
-            STEREO=1,
-            RGBD=2
+            MONOCULAR = 0,
+            STEREO = 1,
+            RGBD = 2
         };
-    
+
 
     public:
         // 构造函数，初始化SLAM系统，运行局部地图，回路闭合和地图显示线程。
-        System( const string &strVocFile, const string &strSettingsFile, const eSensor sensor, const bool bUseViewer = true );
+        System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor,
+               const bool bUseViewer = true);
 
         // 处理双目采集图像。
         // 输入：RGB或者灰度,两幅图像需要保持同步；时间戳。        输出：返回相机位姿。
-        cv::Mat TrackStereo( const cv::Mat &imLeft, const cv::Mat &imRight, const double &timestamp );
-    
+        cv::Mat TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timestamp);
+
         // 处理RGBD图像
         // 输入：RGB图像和深度信息，需要保持对应关系；时间戳。     输出：返回相机位姿。
-        cv::Mat TrackRGBD( const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp );
-    
+        cv::Mat TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp);
+
         // 处理单目采集图像
         // 输入：RGB图像或灰度图像；时间戳。                       输出：返回相机位姿。
-        cv::Mat TrackMonocular( const cv::Mat &im, const double &timestamp );
-	cv::Mat TrackMonoVI( const cv::Mat &im, const std::vector<IMUData> &vimu, const double &timestamp);
+        cv::Mat TrackMonocular(const cv::Mat &im, const double &timestamp);
+
+        cv::Mat TrackMonoVI(const cv::Mat &im, const std::vector<IMUData> &vimu, const double &timestamp);
 
         // 停止局部地图线程，只进行相机跟踪。
         void ActivateLocalizationMode();
@@ -78,18 +86,18 @@ public:
         // 按照Tum数据集格式的保存相机轨迹。
         // 首先需要调用终止线程。
         // 具体数据格式见 http://vision.in.tum.de/data/datasets/rgbd-dataset
-        void SaveTrajectoryTUM( const string &filename) ;
+        void SaveTrajectoryTUM(const string &filename);
 
         // 按照TUM数据集格式保存关键帧相机的轨迹。
         // 这个函数用于单目传感器。
         // 调用前需要调用ShutDown函数
         // 数据格式见 http://vision.in.tum.de/data/datasets/rgbd-dataset
-        void SaveKeyFrameTrajectoryTUM( const string &filename );
+        void SaveKeyFrameTrajectoryTUM(const string &filename);
 
         // 按照KITTI数据集格式保存相机轨迹。
         // 首先需要调用ShutDown函数
         // 数据格式见 http://www.cvlibs.net/datasets/kitti/eval_odometry.php
-	void SaveTrajectoryKITTI(const string &filename);
+        void SaveTrajectoryKITTI(const string &filename);
 
         // 未来的工作
         //SaveMap( const string &filename );
@@ -133,8 +141,8 @@ public:
         std::thread *mptLocalMapping;
         std::thread *mptLoopClosing;
         std::thread *mptViewer;
-	
-	std::thread *mptLocalMappingVIOInit;
+
+        std::thread *mptLocalMappingVIOInit;
 
         // 重置标志
         std::mutex mMutexReset;
@@ -146,8 +154,7 @@ public:
         bool mbDeactivateLocalizationMode;
 
 
-
-};
+    };
 
 
 } //namespace ORB_SLAM2;

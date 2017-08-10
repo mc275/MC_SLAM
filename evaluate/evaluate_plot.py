@@ -10,7 +10,7 @@ import argparse
 import associate
 import evaluate_ate
 
-filepath = '/home/mc/My_Code/ORB_MC_VI/evaluate/';
+filepath = './';
 
 parser = argparse.ArgumentParser(description='''
     This script plot EuRoC ground truth Trajectory and Mono+IMU SLAM Trajectory

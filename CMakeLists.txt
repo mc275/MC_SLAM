@@ -85,7 +85,7 @@ ${BLAS_LIBRARIES}
 ${LAPACK_LIBRARIES}
 )
 
-# 编译Vocabulary二进制文件
+
 # 设置可执行文件输出目录。
 #SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Vocabulary )
 #add_executable(bin_vocabulary Vocabulary/bin_vocabulary.cpp)
@@ -98,17 +98,16 @@ add_executable(mono_kitti Examples/Monocular/mono_kitti.cc)
 target_link_libraries(mono_kitti ${PROJECT_NAME})
 
 # 编译单目TUM数据集可执行文件
-SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Examples/Monocular)
 add_executable(mono_tum Examples/Monocular/mono_tum.cc)
 target_link_libraries(mono_tum ${PROJECT_NAME})
 
 # 编译单目Euroc数据集可执行文件
-SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Examples/Monocular)
 add_executable(mono_EuRoC Examples/Monocular/mono_EuRoC.cpp)
 target_link_libraries(mono_EuRoC ${PROJECT_NAME})
 
-
-
+# 编译单目Euroc数据集可执行文件
+add_executable(mono_EuRoC_vins Examples/Monocular/mono_EuRoC_vins.cc)
+target_link_libraries(mono_EuRoC_vins ${PROJECT_NAME})
 
 
 

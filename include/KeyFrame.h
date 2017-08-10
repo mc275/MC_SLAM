@@ -20,283 +20,332 @@
 
 namespace ORB_SLAM2
 {
-    
+
     class Map;
+
     class MapPoint;
+
     class Frame;
+
     class KeyFrameDatabase;
-    
+
 
     // 关键帧，可以由Frame构造，许多数据会被3个线程同时访问，用锁的地方很普遍。
 
     class KeyFrame
     {
-	
+
     public:
-	
-	// Vison+IMU
-	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-	
-	// VI 构造函数
-	KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB, std::vector<IMUData> vIMUData, KeyFrame *pLastKF=NULL);
-	
-	KeyFrame *GetPrevKeyFrame(void);
-	KeyFrame *GetNextKeyFrame(void);
-	void SetPrevKeyFrame(KeyFrame *pKF);
-	void SetNextKeyFrame(KeyFrame *pKF);
-	
-	std::vector<IMUData> GetVectorIMUData(void);
-	void AppendIMUDataToFront(KeyFrame *pPrevKF);
-	void ComputePreInt(void);
-	
-	const IMUPreintegrator &GetIMUPreInt(void);
-	
-	void UpdateNavStatePVRFromTcw(const cv::Mat &Tcw, const cv::Mat &Tbc);
-	void UpdatePoseFromNS(const cv::Mat &Tbc);
-	void UpdateNavState(const IMUPreintegrator &imupreint, const Vector3d &gw);
-	
-	// 设置KF的导航状态量
-	void SetNavState(const NavState &ns);
-	const NavState &GetNavState(void);
-	void SetNavStateVel(const Vector3d &vel);
-	void SetNavStatePos(const Vector3d &pos);
-	void SetNavStateRot(const Matrix3d &rot);
-	void SetNavStateRot(const Sophus::SO3 &rot);
-	void SetNavStateBiasGyr(const Vector3d &bg);
-	void SetNavStateBiasAcc(const Vector3d &ba);
-	void SetNavStateDeltaBg(const Vector3d &dbg);
-	void SetNavStateDeltaBa(const Vector3d &dba);
-	
-	void SetInitialNavStateAndBias(const NavState &ns);
-	
-	// 闭环检测变量
-	NavState mNavStateGBA;					// mTcwGBA
-	NavState mNavStateBefGBA;				// mTcwBefGBA
-	
+
+        // Vison+IMU
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+        // VI 构造函数
+        KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB, std::vector<IMUData> vIMUData, KeyFrame *pLastKF = NULL);
+
+        KeyFrame *GetPrevKeyFrame(void);
+
+        KeyFrame *GetNextKeyFrame(void);
+
+        void SetPrevKeyFrame(KeyFrame *pKF);
+
+        void SetNextKeyFrame(KeyFrame *pKF);
+
+        std::vector<IMUData> GetVectorIMUData(void);
+
+        void AppendIMUDataToFront(KeyFrame *pPrevKF);
+
+        void ComputePreInt(void);
+
+        const IMUPreintegrator &GetIMUPreInt(void);
+
+        void UpdateNavStatePVRFromTcw(const cv::Mat &Tcw, const cv::Mat &Tbc);
+
+        void UpdatePoseFromNS(const cv::Mat &Tbc);
+
+        void UpdateNavState(const IMUPreintegrator &imupreint, const Vector3d &gw);
+
+        // 设置KF的导航状态量
+        void SetNavState(const NavState &ns);
+
+        const NavState &GetNavState(void);
+
+        void SetNavStateVel(const Vector3d &vel);
+
+        void SetNavStatePos(const Vector3d &pos);
+
+        void SetNavStateRot(const Matrix3d &rot);
+
+        void SetNavStateRot(const Sophus::SO3 &rot);
+
+        void SetNavStateBiasGyr(const Vector3d &bg);
+
+        void SetNavStateBiasAcc(const Vector3d &ba);
+
+        void SetNavStateDeltaBg(const Vector3d &dbg);
+
+        void SetNavStateDeltaBa(const Vector3d &dba);
+
+        void SetInitialNavStateAndBias(const NavState &ns);
+
+        // 闭环检测变量
+        NavState mNavStateGBA;                    // mTcwGBA
+        NavState mNavStateBefGBA;                // mTcwBefGBA
+
     protected:
-	
-	std::mutex mMutexPrevKF;
-	std::mutex mMutexNextKF;
-	KeyFrame *mpPrevKeyFrame;
-	KeyFrame *mpNextKeyFrame;
-	
-	std::mutex mMutexNavState;
-	NavState mNavState;
-	
-	// IMU预积分数据
-	std::mutex mMutexIMUData;
-	std::vector<IMUData> mvIMUData;
-	IMUPreintegrator mIMUPreInt;
-	
-        public:
 
-            // 构造函数。
-            KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB);
+        std::mutex mMutexPrevKF;
+        std::mutex mMutexNextKF;
+        KeyFrame *mpPrevKeyFrame;
+        KeyFrame *mpNextKeyFrame;
 
-            // 位姿函数。
-            // 在这里的get set需要用到锁。
-	    void SetPose(const cv::Mat &Tcw);
-            cv::Mat GetPose();
-            cv::Mat GetPoseInverse();
-            cv::Mat GetCameraCenter();
-            cv::Mat GetStereoCenter();
-            cv::Mat GetRotation();
-            cv::Mat GetTranslation();
+        std::mutex mMutexNavState;
+        NavState mNavState;
 
+        // IMU预积分数据
+        std::mutex mMutexIMUData;
+        std::vector<IMUData> mvIMUData;
+        IMUPreintegrator mIMUPreInt;
 
-            // 词袋表示。
-            void ComputeBoW();
+    public:
 
-            //  Covisibility图函数。
-            void AddConnection(KeyFrame *pKF, const int &weight);
-            void EraseConnection(KeyFrame *pKF);
-            void UpdateConnections();
-            void UpdateBestCovisibles();
-            std::set<KeyFrame *> GetConnectedKeyFrames();
-            std::vector<KeyFrame *> GetVectorCovisibleKeyFrames();
-            std::vector<KeyFrame *> GetBestCovisibilityKeyFrames(const int &N);
-            std::vector<KeyFrame *> GetCovisiblesByWeight(const int &w);
-            int GetWeight(KeyFrame *pKF);
+        // 构造函数。
+        KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB);
 
-            // Spanning树函数。
-            void AddChild(KeyFrame *pKF);
-            void EraseChild(KeyFrame *pKF);
-            void ChangeParent(KeyFrame *pKF);
-            std::set<KeyFrame *> GetChilds();
-            KeyFrame *GetParent();
-            bool hasChild(KeyFrame *pKF);
+        // 位姿函数。
+        // 在这里的get set需要用到锁。
+        void SetPose(const cv::Mat &Tcw);
 
-            // 闭环边。
-            void AddLoopEdge(KeyFrame *pKF);
-            std::set<KeyFrame *> GetLoopEdges();
+        cv::Mat GetPose();
 
-            // 地图点云观察函数。
-            void AddMapPoint(MapPoint *pMP, const size_t &idx);
-            void EraseMapPointMatch(const size_t &idx);
-            void EraseMapPointMatch(MapPoint *pMP);
-            void ReplaceMapPointMatch(const size_t &idx, MapPoint * pMP);
-            std::set<MapPoint *> GetMapPoints();
-            std::vector<MapPoint *> GetMapPointMatches();
-            int TrackedMapPoints(const int &minObs);
-            MapPoint *GetMapPoint(const size_t &idx);
+        cv::Mat GetPoseInverse();
 
-            // 特征点函数
-            std::vector<size_t> GetFeaturesInArea(const float &x, const float &y, const float &r) const;
-            cv::Mat UnprojectStereo(int i);
+        cv::Mat GetCameraCenter();
+
+        cv::Mat GetStereoCenter();
+
+        cv::Mat GetRotation();
+
+        cv::Mat GetTranslation();
 
 
-            // 图像。
-            bool IsInImage(const float &x, const float &y) const;
+        // 词袋表示。
+        void ComputeBoW();
 
-            // 使能/失效坏点标志。
-            void SetNotErase();
-            void SetErase();
+        //  Covisibility图函数。
+        void AddConnection(KeyFrame *pKF, const int &weight);
 
-            // 置位/检查坏点标志。
-            void SetBadFlag();
-            bool isBad();
+        void EraseConnection(KeyFrame *pKF);
 
-            // 计算场景深度，在单目中使用。(q=2 中位数)
-            float ComputeSceneMedianDepth(const int q);
+        void UpdateConnections();
 
-            static bool weightComp(int a, int b)
-            {
-                return a>b;
-            }
+        void UpdateBestCovisibles();
 
-            static bool lId(KeyFrame *pKF1, KeyFrame *pKF2)
-            {
-                return pKF1->mnId < pKF2->mnId;
-            }
+        std::set<KeyFrame *> GetConnectedKeyFrames();
+
+        std::vector<KeyFrame *> GetVectorCovisibleKeyFrames();
+
+        std::vector<KeyFrame *> GetBestCovisibilityKeyFrames(const int &N);
+
+        std::vector<KeyFrame *> GetCovisiblesByWeight(const int &w);
+
+        int GetWeight(KeyFrame *pKF);
+
+        // Spanning树函数。
+        void AddChild(KeyFrame *pKF);
+
+        void EraseChild(KeyFrame *pKF);
+
+        void ChangeParent(KeyFrame *pKF);
+
+        std::set<KeyFrame *> GetChilds();
+
+        KeyFrame *GetParent();
+
+        bool hasChild(KeyFrame *pKF);
+
+        // 闭环边。
+        void AddLoopEdge(KeyFrame *pKF);
+
+        std::set<KeyFrame *> GetLoopEdges();
+
+        // 地图点云观察函数。
+        void AddMapPoint(MapPoint *pMP, const size_t &idx);
+
+        void EraseMapPointMatch(const size_t &idx);
+
+        void EraseMapPointMatch(MapPoint *pMP);
+
+        void ReplaceMapPointMatch(const size_t &idx, MapPoint *pMP);
+
+        std::set<MapPoint *> GetMapPoints();
+
+        std::vector<MapPoint *> GetMapPointMatches();
+
+        int TrackedMapPoints(const int &minObs);
+
+        MapPoint *GetMapPoint(const size_t &idx);
+
+        // 特征点函数
+        std::vector<size_t> GetFeaturesInArea(const float &x, const float &y, const float &r) const;
+
+        cv::Mat UnprojectStereo(int i);
 
 
-            // 以下变量只在一个线程中访问，或者从不更改。
-        public:
+        // 图像。
+        bool IsInImage(const float &x, const float &y) const;
 
-            // nNextId改为nLastId比较好，表示上一个KF。
-            static long unsigned int nNextId;
-            
-            // mnId为当前KF的Id,是nNextId+1。
-            long unsigned int mnId;
+        // 使能/失效坏点标志。
+        void SetNotErase();
 
-            // KF的基本属性是一个Frame，初始化时需要Frame,
-            // mnFrameId记录了该KF是哪个Frame初始化的。
-            const long unsigned int mnFrameId;
+        void SetErase();
 
-            // 时间戳。
-            const double mTimeStamp;
+        // 置位/检查坏点标志。
+        void SetBadFlag();
 
-            // 栅格(加快特征匹配)。
-            // 和Frame类中的定义相同。
-            const int mnGridCols;
-            const int mnGridRows;
-            const float mfGridElementWidthInv;
-            const float mfGridElementHeightInv;
+        bool isBad();
+
+        // 计算场景深度，在单目中使用。(q=2 中位数)
+        float ComputeSceneMedianDepth(const int q);
+
+        static bool weightComp(int a, int b)
+        {
+            return a > b;
+        }
+
+        static bool lId(KeyFrame *pKF1, KeyFrame *pKF2)
+        {
+            return pKF1->mnId < pKF2->mnId;
+        }
 
 
-            // 用于跟踪的变量。
-            long unsigned int mnTrackReferenceForFrame; // 利用mCurrentKF.mnId作为标志位，避免3种不同加添局部关键的方法添加重复的关键帧。
-            long unsigned int mnFuseTargetForKF;
+        // 以下变量只在一个线程中访问，或者从不更改。
+    public:
 
-            // 用于局部地图的变量。
-            long unsigned int mnBALocalForKF;
-            long unsigned int mnBAFixedForKF;
+        // nNextId改为nLastId比较好，表示上一个KF。
+        static long unsigned int nNextId;
 
-            // 用于关键帧数据库的变量。
-            long unsigned int mnLoopQuery;
-            int mnLoopWords;
-            float mLoopScore;
-            long unsigned int mnRelocQuery;
-            int mnRelocWords;
-            float mRelocScore;
+        // mnId为当前KF的Id,是nNextId+1。
+        long unsigned int mnId;
 
-            // 用于闭环检测的变量
-            cv::Mat mTcwGBA;
-            cv::Mat mTcwBefGBA;
-            long unsigned int mnBAGlobalForKF;
+        // KF的基本属性是一个Frame，初始化时需要Frame,
+        // mnFrameId记录了该KF是哪个Frame初始化的。
+        const long unsigned int mnFrameId;
 
-            // 相机标定参数
-            const float fx,fy,cx,cy,invfx,invfy,mbf,mb,mThDepth;
+        // 时间戳。
+        const double mTimeStamp;
 
-            // 特征点数量
-            const int N;
+        // 栅格(加快特征匹配)。
+        // 和Frame类中的定义相同。
+        const int mnGridCols;
+        const int mnGridRows;
+        const float mfGridElementWidthInv;
+        const float mfGridElementHeightInv;
 
-            // 特征点，立体坐标系和描述子。通过一个索引关联。
-            // 和Frame关联。
-            const std::vector<cv::KeyPoint> mvKeys;
-            const std::vector<cv::KeyPoint> mvKeysUn;
-            const std::vector<float> mvuRight;      // 如果是单目，为负数。
-            const std::vector<float> mvDepth;       // 如果是单目，为负数。
-            const cv::Mat mDescriptors;
 
-            // BoW。
-            DBoW2::BowVector mBowVec;       // 图像的词袋表示。
-            DBoW2::FeatureVector mFeatVec;  // 局部特征向量节点的索引。
+        // 用于跟踪的变量。
+        long unsigned int mnTrackReferenceForFrame; // 利用mCurrentKF.mnId作为标志位，避免3种不同加添局部关键的方法添加重复的关键帧。
+        long unsigned int mnFuseTargetForKF;
 
-            // 相对于父类的姿态（当坏点标志被激活后）。
-            cv::Mat mTcp;
+        // 用于局部地图的变量。
+        long unsigned int mnBALocalForKF;
+        long unsigned int mnBAFixedForKF;
 
-            // 尺度。
-            const int mnScaleLevels;
-            const float mfScaleFactor;
-            const float mfLogScaleFactor;
-            const std::vector<float> mvScaleFactors;    // 尺度因子， scale^n  scale=1.2 n为层数。
-            const std::vector<float> mvLevelSigma2;     // 尺度因子的平方。
-            const std::vector<float> mvInvLevelSigma2; 
+        // 用于关键帧数据库的变量。
+        long unsigned int mnLoopQuery;
+        int mnLoopWords;
+        float mLoopScore;
+        long unsigned int mnRelocQuery;
+        int mnRelocWords;
+        float mRelocScore;
 
-            // 图像边界和标定
-            const int mnMinX;
-            const int mnMinY;
-            const int mnMaxX;
-            const int mnMaxY;
-            const cv::Mat mK;       // 相机内参
+        // 用于闭环检测的变量
+        cv::Mat mTcwGBA;
+        cv::Mat mTcwBefGBA;
+        long unsigned int mnBAGlobalForKF;
 
-            // 以下变量需要通过互斥体访问来保证线程安全。
+        // 相机标定参数
+        const float fx, fy, cx, cy, invfx, invfy, mbf, mb, mThDepth;
 
-        protected:
+        // 特征点数量
+        const int N;
 
-            // SE3位姿和相机质心。
-            cv::Mat Tcw;
-            cv::Mat Twc;
-            cv::Mat Ow;
+        // 特征点，立体坐标系和描述子。通过一个索引关联。
+        // 和Frame关联。
+        const std::vector<cv::KeyPoint> mvKeys;
+        const std::vector<cv::KeyPoint> mvKeysUn;
+        const std::vector<float> mvuRight;      // 如果是单目，为负数。
+        const std::vector<float> mvDepth;       // 如果是单目，为负数。
+        const cv::Mat mDescriptors;
 
-            cv::Mat Cw;             // 双目基线的中点，仅用于可视化。
-            
-            // 关联特征点的地图点云。
-            std::vector<MapPoint *> mvpMapPoints;
+        // BoW。
+        DBoW2::BowVector mBowVec;       // 图像的词袋表示。
+        DBoW2::FeatureVector mFeatVec;  // 局部特征向量节点的索引。
 
-            // BoW
-            KeyFrameDatabase *mpKeyFrameDB;
-            ORBVocabulary * mpORBvocabulary;
+        // 相对于父类的姿态（当坏点标志被激活后）。
+        cv::Mat mTcp;
 
-            // 覆盖在图像上的栅格。
-            std::vector<std::vector <std::vector <size_t> > > mGrid;
+        // 尺度。
+        const int mnScaleLevels;
+        const float mfScaleFactor;
+        const float mfLogScaleFactor;
+        const std::vector<float> mvScaleFactors;    // 尺度因子， scale^n  scale=1.2 n为层数。
+        const std::vector<float> mvLevelSigma2;     // 尺度因子的平方。
+        const std::vector<float> mvInvLevelSigma2;
 
-            // Covisibility图。
-            std::map<KeyFrame *, int> mConnectedKeyFrameWeights;        // 与该关键帧连接的关键和权重。
-            std::vector<KeyFrame *> mvpOrderedConnectedKeyFrames;        // 排序后的关键帧。
-            std::vector<int> mvOrderedWeights;                          // 排序后的权重，从大到小。
+        // 图像边界和标定
+        const int mnMinX;
+        const int mnMinY;
+        const int mnMaxX;
+        const int mnMaxY;
+        const cv::Mat mK;       // 相机内参
 
-            // Spanning树和闭环边。
-            // std::set是集合，和vector相比，插入数据时会自动排序。
-            bool mbFirstConnection;
-            KeyFrame *mpParent;
-            // 生成树的子关键帧。
-            std::set<KeyFrame *> mspChildrens;
-            std::set<KeyFrame *> mspLoopEdges;
+        // 以下变量需要通过互斥体访问来保证线程安全。
 
-            // 坏点标志。
-            bool mbNotErase;
-            bool mbToBeErased;
-            bool mbBad;
+    protected:
 
-            float mHalfBaseline;    // 仅用于可视化。
+        // SE3位姿和相机质心。
+        cv::Mat Tcw;
+        cv::Mat Twc;
+        cv::Mat Ow;
 
-            Map* mpMap;
+        cv::Mat Cw;             // 双目基线的中点，仅用于可视化。
 
-            std::mutex mMutexPose;
-            std::mutex mMutexConnections;
-            std::mutex mMutexFeatures;
+        // 关联特征点的地图点云。
+        std::vector<MapPoint *> mvpMapPoints;
+
+        // BoW
+        KeyFrameDatabase *mpKeyFrameDB;
+        ORBVocabulary *mpORBvocabulary;
+
+        // 覆盖在图像上的栅格。
+        std::vector<std::vector<std::vector<size_t> > > mGrid;
+
+        // Covisibility图。
+        std::map<KeyFrame *, int> mConnectedKeyFrameWeights;        // 与该关键帧连接的关键和权重。
+        std::vector<KeyFrame *> mvpOrderedConnectedKeyFrames;        // 排序后的关键帧。
+        std::vector<int> mvOrderedWeights;                          // 排序后的权重，从大到小。
+
+        // Spanning树和闭环边。
+        // std::set是集合，和vector相比，插入数据时会自动排序。
+        bool mbFirstConnection;
+        KeyFrame *mpParent;
+        // 生成树的子关键帧。
+        std::set<KeyFrame *> mspChildrens;
+        std::set<KeyFrame *> mspLoopEdges;
+
+        // 坏点标志。
+        bool mbNotErase;
+        bool mbToBeErased;
+        bool mbBad;
+
+        float mHalfBaseline;    // 仅用于可视化。
+
+        Map *mpMap;
+
+        std::mutex mMutexPose;
+        std::mutex mMutexConnections;
+        std::mutex mMutexFeatures;
 
 
     };

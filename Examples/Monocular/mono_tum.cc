@@ -16,12 +16,12 @@ using namespace std;
 void LoadImages(const string &strFile, vector<string> &vstrImageFilenames, vector<double> &Timestamps);
 
 // 程序入口。
-int main (int argc, char **argv)
-{   
+int main(int argc, char **argv)
+{
     // 判断输入参数个数是否满足格式。
-    if(argc!=4)
+    if (argc != 4)
     {
-        cerr<< endl << "Usage: ./mono_tum path_to_vocabulary path_to_settings path_to_sequence" <<endl;
+        cerr << endl << "Usage: ./mono_tum path_to_vocabulary path_to_settings path_to_sequence" << endl;
         return 1;
     }
 
@@ -29,7 +29,7 @@ int main (int argc, char **argv)
     vector<string> vstrImageFilenames;      // 帧图像名称
     vector<double> vTimestamps;             // 数据集时间戳。
     // argv[3]是数据集rgb.tx文件所在目录。
-    string strFile = string(argv[3])+"/rgb.txt";
+    string strFile = string(argv[3]) + "/rgb.txt";
     LoadImages(strFile, vstrImageFilenames, vTimestamps);
 
     // 数据集帧数。
@@ -47,18 +47,17 @@ int main (int argc, char **argv)
     cout << "Images in the sequence: " << nImages << endl;
 
 
-    
     cv::Mat im;
-	// 主循环。
-    for(int ni=0; ni<nImages; ni++)
+    // 主循环。
+    for (int ni = 0; ni < nImages; ni++)
     {
         // 从文件中读取的帧图像。
-        im = cv::imread( string(argv[3])+"/"+vstrImageFilenames[ni], CV_LOAD_IMAGE_UNCHANGED );
+        im = cv::imread(string(argv[3]) + "/" + vstrImageFilenames[ni], CV_LOAD_IMAGE_UNCHANGED);
         // 读取的当前图像对应的时间戳。
         double tframe = vTimestamps[ni];
 
         // 如果没有读取到图像。
-        if( im.empty( ) )
+        if (im.empty())
         {
             cerr << endl << "Failed to load image at :"
                  << string(argv[3]) << "/" << vstrImageFilenames[ni] << endl;
@@ -67,9 +66,9 @@ int main (int argc, char **argv)
 
 
 #ifdef COMPILEDWITHC11
-    std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
 #else
-    std::chrono::monotonic_clock::time_point t1 = std::chrono::monotonic_clock::now();
+        std::chrono::monotonic_clock::time_point t1 = std::chrono::monotonic_clock::now();
 #endif
 
 
@@ -77,39 +76,39 @@ int main (int argc, char **argv)
         SLAM.TrackMonocular(im, tframe);
 
 #ifdef COMPILEDWITHC11
-    std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
 #else
-    std::chrono::monotonic_clock::time_point t2 = std::chrono::monotonic_clock::now();
+        std::chrono::monotonic_clock::time_point t2 = std::chrono::monotonic_clock::now();
 #endif
 
 
         // 处理单帧图像时间。
-        double ttrack = std::chrono::duration_cast<std::chrono::duration<double> >(t2-t1).count();
+        double ttrack = std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
         // 保存处理时间。
-        vTimesTrack[ni]=ttrack;
+        vTimesTrack[ni] = ttrack;
 
 
 
         // 等待加载下一帧图像的时间，
-        double T=0;
+        double T = 0;
         // 没有读取到最后一帧图像。
-        if (ni< nImages-1)
-           // 计算采集时的时间间隔。 
-            T=vTimestamps[ni+1]-tframe;
-        // 读取到最后一帧图像。
-        else if (ni>0)
-           // 使用上一次的间隔时间。
-            T=tframe-vTimestamps[ni-1];
+        if (ni < nImages - 1)
+            // 计算采集时的时间间隔。
+            T = vTimestamps[ni + 1] - tframe;
+            // 读取到最后一帧图像。
+        else if (ni > 0)
+            // 使用上一次的间隔时间。
+            T = tframe - vTimestamps[ni - 1];
 
         // 处理数据快于图像采集，延时等待加载。
         if (ttrack < T)
-            usleep((T-ttrack)*1e6);
-      
+            usleep((T - ttrack) * 1e6);
+
     }
 
     // 回车后继续执行。
-    cout << "Press Enter to Shutdown the System." << endl; 
-    getchar();  
+    cout << "Press Enter to Shutdown the System." << endl;
+    getchar();
 
 
     // 终止所有线程。
@@ -117,16 +116,16 @@ int main (int argc, char **argv)
 
     // 跟踪时间统计。
     sort(vTimesTrack.begin(), vTimesTrack.end());
-    float totaltime=0;
-    for(int ni=0; ni<nImages; ni++)
+    float totaltime = 0;
+    for (int ni = 0; ni < nImages; ni++)
     {
-        totaltime+=vTimesTrack[ni];
+        totaltime += vTimesTrack[ni];
     }
 
     cout << "........" << endl << endl;
-    cout << "median tracking time: " << vTimesTrack[nImages/2] << endl;
-    cout << "mean Tracking time: " << totaltime/nImages << endl;
-    
+    cout << "median tracking time: " << vTimesTrack[nImages / 2] << endl;
+    cout << "mean Tracking time: " << totaltime / nImages << endl;
+
     // 保存相机轨迹。
     SLAM.SaveTrajectoryTUM("KeyFrameTrajectory.txt");
 
@@ -146,21 +145,21 @@ void LoadImages(const string &strFile, vector<string> &vstrImageFilenames, vecto
     ifstream f;
     f.open(strFile.c_str());
 
-    
+
     string s0;
-	// 跳过rgb.txt前三行的说明。
-    getline(f,s0);
-    getline(f,s0);
-    getline(f,s0);
+    // 跳过rgb.txt前三行的说明。
+    getline(f, s0);
+    getline(f, s0);
+    getline(f, s0);
 
     // 获取文件名和时间戳。
-    while(!f.eof())         // eof是否到文件尾部。
+    while (!f.eof())         // eof是否到文件尾部。
     {
         string s;
-		// 读取f文件中的一行。
-        getline(f,s);
+        // 读取f文件中的一行。
+        getline(f, s);
 
-        if(!s.empty())
+        if (!s.empty())
         {
             stringstream ss;
             ss << s;

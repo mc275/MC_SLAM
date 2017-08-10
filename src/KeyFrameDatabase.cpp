@@ -14,25 +14,23 @@ namespace ORB_SLAM2
 {
 
     // 构造函数。
-    KeyFrameDatabase::KeyFrameDatabase(const ORBVocabulary &voc): mpVoc(&voc)
+    KeyFrameDatabase::KeyFrameDatabase(const ORBVocabulary &voc) : mpVoc(&voc)
     {
         // 词的数量。
         mvInvertedFile.resize(voc.size());
     }
 
 
-
     // 根据关键帧的词包，更新数据库的倒排索引。
-	// 将pKF与它包含的word关联起来。
+    // 将pKF与它包含的word关联起来。
     void KeyFrameDatabase::add(KeyFrame *pKF)
     {
         unique_lock<mutex> lock(mMutex);
 
         // 为该KeyFrame包含的词添加关联， vit->first是关键帧pFK包含的词。
-        for(DBoW2::BowVector::const_iterator vit= pKF->mBowVec.begin(), vend=pKF->mBowVec.end(); vit!=vend; vit++)
+        for (DBoW2::BowVector::const_iterator vit = pKF->mBowVec.begin(), vend = pKF->mBowVec.end(); vit != vend; vit++)
             mvInvertedFile[vit->first].push_back(pKF);
     }
-
 
 
     // 关键帧被删除后，更新数据库的倒排索引。
@@ -41,14 +39,14 @@ namespace ORB_SLAM2
         unique_lock<mutex> lock(mMutex);
 
         // 每一个pKF包含多个word，遍历mvInvertedFile中的words，根据word删除对应的pKF。
-        for(DBoW2::BowVector::const_iterator vit=pKF->mBowVec.begin(), vend=pKF->mBowVec.end(); vit!=vend; vit++)
+        for (DBoW2::BowVector::const_iterator vit = pKF->mBowVec.begin(), vend = pKF->mBowVec.end(); vit != vend; vit++)
         {
             // 列出包含又共同word的关键帧。 
             list<KeyFrame *> &lKFs = mvInvertedFile[vit->first];
 
-            for(list<KeyFrame *>::iterator lit=lKFs.begin(), lend=lKFs.end(); lit!=lend; lit++)
+            for (list<KeyFrame *>::iterator lit = lKFs.begin(), lend = lKFs.end(); lit != lend; lit++)
             {
-                if(pKF == *lit)
+                if (pKF == *lit)
                 {
                     lKFs.erase(lit);
                     break;
@@ -59,16 +57,14 @@ namespace ORB_SLAM2
     }
 
 
-
     // 清除KeyFrameDB。
     void KeyFrameDatabase::clear()
     {
         // mvInvertedFile[i] 表示包含第i个word id的所有关键帧。
-        mvInvertedFile.clear(); 
+        mvInvertedFile.clear();
         // 预先训练好的词典，就那个半天也加载不完的玩意。
         mvInvertedFile.resize(mpVoc->size());
     }
-
 
 
     /*
@@ -94,21 +90,22 @@ namespace ORB_SLAM2
             unique_lock<mutex> lock(mMutex);
 
             // words是检测图像是否匹配的关键，遍历pKF的每一word。
-            for(DBoW2::BowVector::const_iterator vit=pKF->mBowVec.begin(), vend=pKF->mBowVec.end(); vit!=vend; vit++)
+            for (DBoW2::BowVector::const_iterator vit = pKF->mBowVec.begin(), vend = pKF->mBowVec.end();
+                 vit != vend; vit++)
             {
                 // 提取包含该word的所有KeyFrame。
                 list<KeyFrame *> &lKFs = mvInvertedFile[vit->first];
 
                 // 遍历有相同word的KF。
-                for(list<KeyFrame *>::iterator lit=lKFs.begin(), lend=lKFs.end(); lit!=lend; lit++)
+                for (list<KeyFrame *>::iterator lit = lKFs.begin(), lend = lKFs.end(); lit != lend; lit++)
                 {
-                    KeyFrame *pKFi=*lit;
+                    KeyFrame *pKFi = *lit;
                     // pKFi没有被标记为pKF的闭环候选帧。
-                    if(pKFi->mnLoopQuery != pKF->mnId)
+                    if (pKFi->mnLoopQuery != pKF->mnId)
                     {
-                        pKFi->mnLoopWords=0;
+                        pKFi->mnLoopWords = 0;
                         // pKFi不在局部相连中。
-                        if(!spConnectedKeyFrames.count(pKFi))
+                        if (!spConnectedKeyFrames.count(pKFi))
                         {
                             // 标记为pKF的候选。
                             pKFi->mnLoopQuery = pKF->mnId;
@@ -121,33 +118,35 @@ namespace ORB_SLAM2
             }
         }
 
-        if(lKFsSharingWords.empty())
+        if (lKFsSharingWords.empty())
             return vector<KeyFrame *>();
 
-		// 存储于当前帧相似度大于minScore的分数和关键帧。
+        // 存储于当前帧相似度大于minScore的分数和关键帧。
         list<pair<float, KeyFrame *>> lScoreAndMatch;
 
 
         // 步骤2 统计所有闭环候选帧中与pKF具有最多word的关键帧对应的word数目。
         int maxCommonWords = 0;
-        for(list<KeyFrame*>::iterator lit=lKFsSharingWords.begin(), lend=lKFsSharingWords.end(); lit!=lend; lit++)
+        for (list<KeyFrame *>::iterator lit = lKFsSharingWords.begin(), lend = lKFsSharingWords.end();
+             lit != lend; lit++)
         {
-            if((*lit)->mnLoopWords > maxCommonWords)
+            if ((*lit)->mnLoopWords > maxCommonWords)
                 maxCommonWords = (*lit)->mnLoopWords;
         }
 
         // 计算相似度的word数目阈值。
-        int minCommonWords = maxCommonWords*0.8f;
-        
+        int minCommonWords = maxCommonWords * 0.8f;
+
         int nscores = 0;
 
         // 步骤3 遍历所有候选关键帧，找出共有word数目大于minCommonwords且单词匹配度大于minScore的关键帧，存入lScoreAndMatch。
-        for(list<KeyFrame *>::iterator lit=lKFsSharingWords.begin(), lend=lKFsSharingWords.end(); lit!=lend; lit++)
+        for (list<KeyFrame *>::iterator lit = lKFsSharingWords.begin(), lend = lKFsSharingWords.end();
+             lit != lend; lit++)
         {
             KeyFrame *pKFi = *lit;
 
             // pKF只和共有words数目大于minCommonWords的关键帧进行比较。
-            if(pKFi->mnLoopWords > minCommonWords)
+            if (pKFi->mnLoopWords > minCommonWords)
             {
                 nscores++;
 
@@ -155,21 +154,22 @@ namespace ORB_SLAM2
                 pKFi->mLoopScore = si;
 
                 // 大于最小匹配度minScore。
-                if(si >= minScore)
-                    lScoreAndMatch.push_back(make_pair(si,pKFi));
+                if (si >= minScore)
+                    lScoreAndMatch.push_back(make_pair(si, pKFi));
             }
         }
 
-        if(lScoreAndMatch.empty())
+        if (lScoreAndMatch.empty())
             return vector<KeyFrame *>();
 
-		// 计算分组总得分和最高分关键帧
+        // 计算分组总得分和最高分关键帧
         list<pair<float, KeyFrame *>> lAccScoreAndMatch;
         float bestAccScore = minScore;
 
         // 步骤4 lScoreAndMatch中每一个KF把自己共视程度较高的前10个关键帧化为一组；
         //       每一组会计算全组得分，并记录该组得分最高的KF，存在lAccScoreAndMatch中。
-        for(list<pair<float, KeyFrame *>>::iterator it=lScoreAndMatch.begin(), itend=lScoreAndMatch.end(); it!=itend; it++)
+        for (list<pair<float, KeyFrame *>>::iterator it = lScoreAndMatch.begin(), itend = lScoreAndMatch.end();
+             it != itend; it++)
         {
             KeyFrame *pKFi = it->second;
             vector<KeyFrame *> vpNeighs = pKFi->GetBestCovisibilityKeyFrames(10);
@@ -177,16 +177,16 @@ namespace ORB_SLAM2
             float bestScore = it->first;    // 该组最高得分。
             float accScore = it->first;     // 该组累计得分。
             KeyFrame *pBestKF = pKFi;       // 该组最高得分对应KF。
-            for(vector<KeyFrame *>::iterator vit=vpNeighs.begin(), vend=vpNeighs.end(); vit!=vend; vit++)
+            for (vector<KeyFrame *>::iterator vit = vpNeighs.begin(), vend = vpNeighs.end(); vit != vend; vit++)
             {
                 // 候选帧的相邻帧。
                 KeyFrame *pKF2 = *vit;
                 // 只有pKF2在闭环候选帧lScoreAndMatch中，才能贡献分数。
-                if(pKF2->mnLoopQuery == pKF->mnId && pKF2->mnLoopWords > minCommonWords)
+                if (pKF2->mnLoopQuery == pKF->mnId && pKF2->mnLoopWords > minCommonWords)
                 {
                     accScore += pKF2->mLoopScore;
                     // 组内最高得分和对应关键帧。
-                    if(pKF2->mLoopScore>bestScore)
+                    if (pKF2->mLoopScore > bestScore)
                     {
                         pBestKF = pKF2;
                         bestScore = pKF2->mLoopScore;
@@ -196,11 +196,11 @@ namespace ORB_SLAM2
 
             lAccScoreAndMatch.push_back(make_pair(accScore, pBestKF));
             // 所有组中的最高得分。
-            if(accScore>bestAccScore)
+            if (accScore > bestAccScore)
                 bestAccScore = accScore;
         }
 
-        float minScoreToRetain = 0.75f*bestAccScore;
+        float minScoreToRetain = 0.75f * bestAccScore;
 
         // 已添加到候选vpLoopCandidates中的KF组成的数组，防止重复添加。
         set<KeyFrame *> spAlreadyAddedKF;
@@ -209,13 +209,14 @@ namespace ORB_SLAM2
         vpLoopCandidates.reserve(lAccScoreAndMatch.size());
 
         // 步骤5 得到组得分>minScoreToRetain的组，得到组中分数最高的关键帧。
-        for(list<pair<float, KeyFrame *>>::iterator it=lAccScoreAndMatch.begin(), itend=lAccScoreAndMatch.end(); it!=itend; it++)
+        for (list<pair<float, KeyFrame *>>::iterator it = lAccScoreAndMatch.begin(), itend = lAccScoreAndMatch.end();
+             it != itend; it++)
         {
-            if(it->first > minScoreToRetain)
+            if (it->first > minScoreToRetain)
             {
                 KeyFrame *pKFi = it->second;
                 // 防止重复添加候选帧。
-                if(!spAlreadyAddedKF.count(pKFi))
+                if (!spAlreadyAddedKF.count(pKFi))
                 {
                     vpLoopCandidates.push_back(pKFi);
                     spAlreadyAddedKF.insert(pKFi);
@@ -226,7 +227,6 @@ namespace ORB_SLAM2
         return vpLoopCandidates;
 
     }
-
 
 
     /**
@@ -248,19 +248,19 @@ namespace ORB_SLAM2
         {
             unique_lock<mutex> lock(mMutex);
 
-            for(DBoW2::BowVector::const_iterator vit=F->mBowVec.begin(), vend=F->mBowVec.end(); vit!=vend; vit++)
+            for (DBoW2::BowVector::const_iterator vit = F->mBowVec.begin(), vend = F->mBowVec.end(); vit != vend; vit++)
             {
                 // 提取包含该word的所有KeyFrame。
                 list<KeyFrame *> &lKFs = mvInvertedFile[vit->first];
 
                 // 遍历有相同word的KF。
-                for(list<KeyFrame *>::iterator lit=lKFs.begin(), lend=lKFs.end(); lit!=lend; lit++)
+                for (list<KeyFrame *>::iterator lit = lKFs.begin(), lend = lKFs.end(); lit != lend; lit++)
                 {
-                    KeyFrame *pKFi=*lit;
+                    KeyFrame *pKFi = *lit;
                     // pKFi没有被标记为F的重定位候选帧。
-                    if(pKFi->mnRelocQuery != F->mnId)
+                    if (pKFi->mnRelocQuery != F->mnId)
                     {
-                        pKFi->mnRelocWords=0;
+                        pKFi->mnRelocWords = 0;
                         pKFi->mnRelocQuery = F->mnId;
                         lKFsSharingWords.push_back(pKFi);
                     }
@@ -270,49 +270,52 @@ namespace ORB_SLAM2
             }
         }
 
-        if(lKFsSharingWords.empty())
+        if (lKFsSharingWords.empty())
             return vector<KeyFrame *>();
 
         // 步骤2 统计所有重定位候选帧中与当前帧F具有最多word的关键帧对应的word数目。
         int maxCommonWords = 0;
-        for(list<KeyFrame*>::iterator lit=lKFsSharingWords.begin(), lend=lKFsSharingWords.end(); lit!=lend; lit++)
+        for (list<KeyFrame *>::iterator lit = lKFsSharingWords.begin(), lend = lKFsSharingWords.end();
+             lit != lend; lit++)
         {
-            if((*lit)->mnRelocWords > maxCommonWords)
+            if ((*lit)->mnRelocWords > maxCommonWords)
                 maxCommonWords = (*lit)->mnRelocWords;
         }
 
         // 计算相似度的word数目阈值。
-        int minCommonWords = maxCommonWords*0.8f;
+        int minCommonWords = maxCommonWords * 0.8f;
 
-        list<pair<float,KeyFrame*> > lScoreAndMatch;
-        
+        list<pair<float, KeyFrame *> > lScoreAndMatch;
+
         int nscores = 0;
 
         // 步骤3 遍历所有候选关键帧，找出共有word数目大于minCommonwords的关键帧，存入lScoreAndMatch。
-        for(list<KeyFrame *>::iterator lit=lKFsSharingWords.begin(), lend=lKFsSharingWords.end(); lit!=lend; lit++)
+        for (list<KeyFrame *>::iterator lit = lKFsSharingWords.begin(), lend = lKFsSharingWords.end();
+             lit != lend; lit++)
         {
             KeyFrame *pKFi = *lit;
 
             // pKF只和共有words数目大于minCommonWords的关键帧进行比较。
-            if(pKFi->mnRelocWords > minCommonWords)
+            if (pKFi->mnRelocWords > minCommonWords)
             {
                 nscores++;
 
                 float si = mpVoc->score(F->mBowVec, pKFi->mBowVec);
                 pKFi->mRelocScore = si;
-                lScoreAndMatch.push_back(make_pair(si,pKFi));
+                lScoreAndMatch.push_back(make_pair(si, pKFi));
             }
         }
 
-        if(lScoreAndMatch.empty())
-            return vector<KeyFrame*>();
+        if (lScoreAndMatch.empty())
+            return vector<KeyFrame *>();
 
-        list<pair<float,KeyFrame*> > lAccScoreAndMatch;
+        list<pair<float, KeyFrame *> > lAccScoreAndMatch;
         float bestAccScore = 0;
-        
+
         // 步骤4 lScoreAndMatch中每一个KF把自己共视程度较高的前10个关键帧化为一组；
         //       每一组会计算全组得分，并记录该组得分最高的KF，存在lAccScoreAndMatch中。
-        for(list<pair<float, KeyFrame *>>::iterator it=lScoreAndMatch.begin(), itend=lScoreAndMatch.end(); it!=itend; it++)
+        for (list<pair<float, KeyFrame *>>::iterator it = lScoreAndMatch.begin(), itend = lScoreAndMatch.end();
+             it != itend; it++)
         {
             KeyFrame *pKFi = it->second;
             vector<KeyFrame *> vpNeighs = pKFi->GetBestCovisibilityKeyFrames(10);
@@ -320,17 +323,17 @@ namespace ORB_SLAM2
             float bestScore = it->first;    // 该组最高得分。
             float accScore = bestScore;     // 该组累计得分。
             KeyFrame *pBestKF = pKFi;       // 该组最高得分对应KF。
-            for(vector<KeyFrame *>::iterator vit=vpNeighs.begin(), vend=vpNeighs.end(); vit!=vend; vit++)
+            for (vector<KeyFrame *>::iterator vit = vpNeighs.begin(), vend = vpNeighs.end(); vit != vend; vit++)
             {
                 // 候选帧的相邻帧。
                 KeyFrame *pKF2 = *vit;
                 // 只有pKF2在闭环候选帧lScoreAndMatch中，才能贡献分数。
-                if(pKF2->mnRelocQuery != F->mnId)
+                if (pKF2->mnRelocQuery != F->mnId)
                     continue;
 
                 accScore += pKF2->mRelocScore;
                 // 组内最高得分和对应关键帧。
-                if(pKF2->mRelocScore > bestScore)
+                if (pKF2->mRelocScore > bestScore)
                 {
                     pBestKF = pKF2;
                     bestScore = pKF2->mRelocScore;
@@ -339,12 +342,12 @@ namespace ORB_SLAM2
 
             lAccScoreAndMatch.push_back(make_pair(accScore, pBestKF));
             // 所有组中的最高得分。
-            if(accScore>bestAccScore)
+            if (accScore > bestAccScore)
                 bestAccScore = accScore;
         }
 
 
-        float minScoreToRetain = 0.75f*bestAccScore;
+        float minScoreToRetain = 0.75f * bestAccScore;
 
         // 已添加到候选vpLoopCandidates中的KF组成的数组，防止重复添加。
         set<KeyFrame *> spAlreadyAddedKF;
@@ -353,15 +356,16 @@ namespace ORB_SLAM2
         vpRelocCandidates.reserve(lAccScoreAndMatch.size());
 
         // 步骤5 得到组得分>minScoreToRetain的组，得到组中分数最高的关键帧。
-        for(list<pair<float, KeyFrame *>>::iterator it=lAccScoreAndMatch.begin(), itend=lAccScoreAndMatch.end(); it!=itend; it++)
+        for (list<pair<float, KeyFrame *>>::iterator it = lAccScoreAndMatch.begin(), itend = lAccScoreAndMatch.end();
+             it != itend; it++)
         {
             const float &si = it->first;
 
-            if(si > minScoreToRetain)
+            if (si > minScoreToRetain)
             {
                 KeyFrame *pKFi = it->second;
                 // 防止重复添加候选帧。
-                if(!spAlreadyAddedKF.count(pKFi))
+                if (!spAlreadyAddedKF.count(pKFi))
                 {
                     vpRelocCandidates.push_back(pKFi);
                     spAlreadyAddedKF.insert(pKFi);
@@ -372,7 +376,6 @@ namespace ORB_SLAM2
         return vpRelocCandidates;
 
     }
-
 
 
 }   // namespace ORB_SLAM2

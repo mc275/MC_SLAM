@@ -12,73 +12,81 @@ namespace ORB_SLAM2
 {
 
     class MapPoint;
+
     class KeyFrame;
-    
+
     class KFIdComapre
     {
     public:
-	bool operator()(const KeyFrame *kfleft, const KeyFrame *kfright) const;
+        bool operator()(const KeyFrame *kfleft, const KeyFrame *kfright) const;
     };
 
     class Map
     {
-	
+
     public:
-	
-	// 更新绝对尺度
-	void UpdateScale(const double &scale);
-	
-        public:
-            // 默认构造函数。
-            Map();
-            
-            // 在地图中插入关键帧。
-            void AddKeyFrame(KeyFrame *pKF);
-            // 在地图中插入点云。
-            void AddMapPoint(MapPoint *pMP);
-            // 在地图中剔除点云。
-            void EraseMapPoint(MapPoint *pMP);
-            // 在地图中剔除关键帧。
-            void EraseKeyFrame(KeyFrame *pKF);
-            // 设置参考MP，用于DrawMapPoints。
-            void SetReferenceMapPoints(const std::vector<MapPoint *> &vpMPs);
 
-            // 获得所有关键帧。
-            std::vector<KeyFrame *> GetAllKeyFrames();
-            // 获得所有点云。
-            std::vector<MapPoint *> GetAllMapPoints();
-            // 获得参考点晕。
-            std::vector<MapPoint *> GetReferenceMapPoints();
+        // 更新绝对尺度
+        void UpdateScale(const double &scale);
 
+    public:
+        // 默认构造函数。
+        Map();
 
-            long unsigned int MapPointsInMap();
-            long unsigned  KeyFramesInMap();
+        // 在地图中插入关键帧。
+        void AddKeyFrame(KeyFrame *pKF);
 
-            // 最后一帧关键帧？
-            long unsigned int GetMaxKFid();
+        // 在地图中插入点云。
+        void AddMapPoint(MapPoint *pMP);
 
-            void clear();
+        // 在地图中剔除点云。
+        void EraseMapPoint(MapPoint *pMP);
 
-            vector<KeyFrame *> mvpKeyFrameOrigins;
+        // 在地图中剔除关键帧。
+        void EraseKeyFrame(KeyFrame *pKF);
 
-            std::mutex mMutexMapUpdate;
+        // 设置参考MP，用于DrawMapPoints。
+        void SetReferenceMapPoints(const std::vector<MapPoint *> &vpMPs);
 
-            // 避免在不同线程中同时创建点云，造成Id冲突。
-            std::mutex mMutexPointCreation;
+        // 获得所有关键帧。
+        std::vector<KeyFrame *> GetAllKeyFrames();
 
-        protected:
+        // 获得所有点云。
+        std::vector<MapPoint *> GetAllMapPoints();
 
-            std::set<MapPoint *> mspMapPoints;                  // 地图点云集。 
-            // std::set<KeyFrame *> mspKeyFrames;                  // 关键帧集。
-
-            std::set<KeyFrame *, KFIdComapre> mspKeyFrames;        // 关键帧集。
+        // 获得参考点晕。
+        std::vector<MapPoint *> GetReferenceMapPoints();
 
 
-            std::vector<MapPoint *> mvpReferenceMapPoints;      // 参考点云集。
+        long unsigned int MapPointsInMap();
 
-            long unsigned int mnMaxKFid;                        // 最大帧Id。
-            
-            std::mutex mMutexMap;
+        long unsigned KeyFramesInMap();
+
+        // 最后一帧关键帧
+        long unsigned int GetMaxKFid();
+
+        void clear();
+
+        vector<KeyFrame *> mvpKeyFrameOrigins;
+
+        std::mutex mMutexMapUpdate;
+
+        // 避免在不同线程中同时创建点云，造成Id冲突。
+        std::mutex mMutexPointCreation;
+
+    protected:
+
+        std::set<MapPoint *> mspMapPoints;                  // 地图点云集。
+        // std::set<KeyFrame *> mspKeyFrames;                  // 关键帧集。
+
+        std::set<KeyFrame *, KFIdComapre> mspKeyFrames;        // 关键帧集。
+
+
+        std::vector<MapPoint *> mvpReferenceMapPoints;      // 参考点云集。
+
+        long unsigned int mnMaxKFid;                        // 最大帧Id。
+
+        std::mutex mMutexMap;
 
 
     };

@@ -43,7 +43,7 @@ cd ../../../../
 echo ""
 echo "Launch file in Examples/ROS/ORB_VIO/launch."
 echo "Modify the configuration file config/euroc.yaml"
-echo "Run as: roslaunch ORB_VIO testeuroc.launch"
+echo "Run as: roslaunch VIO testeuroc.launch"
 echo ""
 
 #echo "Converting vocabulary to binary"

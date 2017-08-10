@@ -8,49 +8,48 @@ namespace ORB_SLAM2
 {
 
     /***************VI SLAM*******************/
-    
+
     // 谓词
-    bool KFIdComapre::operator()(const KeyFrame* kfleft, const KeyFrame* kfright) const
+    bool KFIdComapre::operator()(const KeyFrame *kfleft, const KeyFrame *kfright) const
     {
-	return kfleft->mnId < kfright->mnId;
-    }
-    
-    
-    
-    void Map::UpdateScale(const double& scale)
-    {
-	unique_lock<mutex> lock(mMutexMapUpdate);
-	
-	for(std::set<KeyFrame*, KFIdComapre>::iterator sit = mspKeyFrames.begin(), send=mspKeyFrames.end(); sit!=send; sit++)
-	{
-	    KeyFrame *pKF = *sit;
-	    cv::Mat Tcw = pKF->GetPose();
-	    cv::Mat tcw =Tcw.rowRange(0,3).col(3)*scale;
-	    tcw.copyTo(Tcw.rowRange(0,3).col(3));
-	    pKF->SetPose(Tcw);
-	}
-	
-	for(std::set<MapPoint *>::iterator sit=mspMapPoints.begin(), send=mspMapPoints.end(); sit!=send; sit++)
-	{
-	    MapPoint *pMP = *sit;
-	    pMP->UpdateScale(scale);
-	}
-	
-	std::cout << std::endl << "... Map scale updated ..." << std::endl<< std::endl;
-	
+        return kfleft->mnId < kfright->mnId;
     }
 
 
-    
-    
+    void Map::UpdateScale(const double &scale)
+    {
+        unique_lock<mutex> lock(mMutexMapUpdate);
+
+        for (std::set<KeyFrame *, KFIdComapre>::iterator sit = mspKeyFrames.begin(), send = mspKeyFrames.end();
+             sit != send; sit++)
+        {
+            KeyFrame *pKF = *sit;
+            cv::Mat Tcw = pKF->GetPose();
+            cv::Mat tcw = Tcw.rowRange(0, 3).col(3) * scale;
+            tcw.copyTo(Tcw.rowRange(0, 3).col(3));
+            pKF->SetPose(Tcw);
+        }
+
+        for (std::set<MapPoint *>::iterator sit = mspMapPoints.begin(), send = mspMapPoints.end(); sit != send; sit++)
+        {
+            MapPoint *pMP = *sit;
+            pMP->UpdateScale(scale);
+        }
+
+        std::cout << std::endl << "... Map scale updated ..." << std::endl << std::endl;
+
+    }
+
+
+
+
     /*****************************************/
-    
+
     // 构造函数。
-    Map::Map(): mnMaxKFid(0)
+    Map::Map() : mnMaxKFid(0)
     {
 
     }
-
 
 
     // 在地图中插入关键帧 pKF。
@@ -58,7 +57,7 @@ namespace ORB_SLAM2
     {
         unique_lock<mutex> lock(mMutexMap);
         mspKeyFrames.insert(pKF);
-        if(pKF->mnId > mnMaxKFid)
+        if (pKF->mnId > mnMaxKFid)
             mnMaxKFid = pKF->mnId;
     }
 
@@ -137,11 +136,11 @@ namespace ORB_SLAM2
     void Map::clear()
     {
         // 释放MapPoints的内存。
-        for(set<MapPoint *>::iterator sit=mspMapPoints.begin(), send=mspMapPoints.end(); sit!=send; sit++)
+        for (set<MapPoint *>::iterator sit = mspMapPoints.begin(), send = mspMapPoints.end(); sit != send; sit++)
             delete *sit;
 
         // 释放KeyFrame的内存。
-        for(set<KeyFrame *>::iterator sit=mspKeyFrames.begin(), send=mspKeyFrames.end(); sit!=send; sit++)
+        for (set<KeyFrame *>::iterator sit = mspKeyFrames.begin(), send = mspKeyFrames.end(); sit != send; sit++)
             delete *sit;
 
         mspMapPoints.clear();
@@ -150,8 +149,6 @@ namespace ORB_SLAM2
         mvpReferenceMapPoints.clear();
         mvpKeyFrameOrigins.clear();
     }
-
-
 
 
 }   // namespace ORB_SLAM2

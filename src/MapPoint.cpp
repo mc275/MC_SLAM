@@ -1,7 +1,6 @@
 
 
 
-
 #include "MapPoint.h"
 #include "ORBmatcher.h"
 
@@ -14,30 +13,28 @@ namespace ORB_SLAM2
     // 静态成员变量定义，Id从0开始。
     long unsigned int MapPoint::nNextId = 0;
     mutex MapPoint::mGlobalMutex;
-    
-    
-    
+
+
     // VI SLAM
-    bool cmpKeyFrameId::operator()(const KeyFrame* a, const KeyFrame* b) const
+    bool cmpKeyFrameId::operator()(const KeyFrame *a, const KeyFrame *b) const
     {
-	return a->mnId < b->mnId;
+        return a->mnId < b->mnId;
     }
 
 
-
-    /* 
+    /*
     * 给定坐标与KeyFrame构造MapPoint。
     *   双目： StereoInitialization()，CreateNewKeyFrame()，LocalMapping::CreateNewMapPoints()。
     *   单目： Tracking::CreateInitialMapMonocular(), LocalMapping::CreateNewMapPoints()。
     */
-    MapPoint::MapPoint(const cv::Mat &Pos, KeyFrame *pRefKF, Map *pMap):
-        mnFirstKFid(pRefKF->mnId), mnFirstFrame(pRefKF->mnFrameId), nObs(0), mnTrackReferenceForFrame(0),
-        mnLastFrameSeen(0), mnBALocalForKF(0), mnFuseCandidateForKF(0), mnLoopPointForKF(0), mnCorrectedByKF(0),
-        mnCorrectedReference(0), mnBAGlobalForKF(0), mpRefKF(pRefKF), mnVisible(1), mnFound(1), mbBad(false),
-        mpReplaced(static_cast<MapPoint *>(NULL)), mfMinDistance(0), mfMaxDistance(0), mpMap(pMap)
+    MapPoint::MapPoint(const cv::Mat &Pos, KeyFrame *pRefKF, Map *pMap) :
+            mnFirstKFid(pRefKF->mnId), mnFirstFrame(pRefKF->mnFrameId), nObs(0), mnTrackReferenceForFrame(0),
+            mnLastFrameSeen(0), mnBALocalForKF(0), mnFuseCandidateForKF(0), mnLoopPointForKF(0), mnCorrectedByKF(0),
+            mnCorrectedReference(0), mnBAGlobalForKF(0), mpRefKF(pRefKF), mnVisible(1), mnFound(1), mbBad(false),
+            mpReplaced(static_cast<MapPoint *>(NULL)), mfMinDistance(0), mfMaxDistance(0), mpMap(pMap)
     {
         Pos.copyTo(mWorldPos);
-        mNormalVector = cv::Mat::zeros(3,1,CV_32F);
+        mNormalVector = cv::Mat::zeros(3, 1, CV_32F);
 
         // MapPoint在Tracking或Local Mapping线程创建，此处mutex防止id冲突。
         unique_lock<mutex> lock(mpMap->mMutexPointCreation);
@@ -45,31 +42,30 @@ namespace ORB_SLAM2
     }
 
 
-
     /*
     * 给定坐标与Frame创建MapPing。
     *   双目： UpdateLastFrame()*
     */
-    MapPoint::MapPoint(const cv::Mat &Pos, Map* pMap, Frame* pFrame, const int &idxF):
-        mnFirstKFid(-1), mnFirstFrame(pFrame->mnId), nObs(0), mnTrackReferenceForFrame(0), mnLastFrameSeen(0),
-        mnBALocalForKF(0), mnFuseCandidateForKF(0),mnLoopPointForKF(0), mnCorrectedByKF(0),
-        mnCorrectedReference(0), mnBAGlobalForKF(0), mpRefKF(static_cast<KeyFrame*>(NULL)), mnVisible(1),
-        mnFound(1), mbBad(false), mpReplaced(NULL), mpMap(pMap)
+    MapPoint::MapPoint(const cv::Mat &Pos, Map *pMap, Frame *pFrame, const int &idxF) :
+            mnFirstKFid(-1), mnFirstFrame(pFrame->mnId), nObs(0), mnTrackReferenceForFrame(0), mnLastFrameSeen(0),
+            mnBALocalForKF(0), mnFuseCandidateForKF(0), mnLoopPointForKF(0), mnCorrectedByKF(0),
+            mnCorrectedReference(0), mnBAGlobalForKF(0), mpRefKF(static_cast<KeyFrame *>(NULL)), mnVisible(1),
+            mnFound(1), mbBad(false), mpReplaced(NULL), mpMap(pMap)
     {
         Pos.copyTo(mWorldPos);
         cv::Mat Ow = pFrame->GetCameraCenter();
         // 世界坐标系下，相机指向3D点的向量。
         mNormalVector = mWorldPos - Ow;
-        mNormalVector = mNormalVector/cv::norm(mNormalVector);  // 归一化，单位向量。
+        mNormalVector = mNormalVector / cv::norm(mNormalVector);  // 归一化，单位向量。
 
         cv::Mat PC = Pos - Ow;
         const float dist = cv::norm(PC);
         const int level = pFrame->mvKeysUn[idxF].octave;
         const float levelScaleFactor = pFrame->mvScaleFactors[level];
-        const int nLevels = pFrame->mnScaleLevels; 
+        const int nLevels = pFrame->mnScaleLevels;
 
-        mfMaxDistance = dist*levelScaleFactor;
-        mfMinDistance = mfMaxDistance/pFrame->mvScaleFactors[nLevels-1];
+        mfMaxDistance = dist * levelScaleFactor;
+        mfMinDistance = mfMaxDistance / pFrame->mvScaleFactors[nLevels - 1];
 
         // 左目特征点对应的描述子。
         pFrame->mDescriptors.row(idxF).copyTo(mDescriptor);
@@ -78,19 +74,16 @@ namespace ORB_SLAM2
         unique_lock<mutex> lock(mpMap->mMutexPointCreation);
         mnId = nNextId++;
 
-    } 
-
-    
-    
-    // VI SLAM 更新点云尺度
-    void MapPoint::UpdateScale(float scale)
-    {
-	SetWorldPos(GetWorldPos()*scale);
-	mfMaxDistance *= scale;
-	mfMinDistance *= scale;
     }
 
 
+    // VI SLAM 更新点云尺度
+    void MapPoint::UpdateScale(float scale)
+    {
+        SetWorldPos(GetWorldPos() * scale);
+        mfMaxDistance *= scale;
+        mfMinDistance *= scale;
+    }
 
 
     // 设置MapPoint世界坐标系下的坐标。
@@ -134,16 +127,16 @@ namespace ORB_SLAM2
     {
         unique_lock<mutex> lock(mMutexFeatures);
         // 已经建立过观测关系。
-        if(mObservations.count(pKF))
+        if (mObservations.count(pKF))
             return;
 
         // 记录下能观测到该Mappoint的KF和MapPoint在KF中的索引。
         mObservations[pKF] = idx;
 
         // 双目或RGBD
-        if(pKF->mvuRight[idx] >= 0)
+        if (pKF->mvuRight[idx] >= 0)
             nObs += 2;
-        // 单目。
+            // 单目。
         else
             nObs++;
 
@@ -155,45 +148,45 @@ namespace ORB_SLAM2
         bool bBad = false;
         {
             unique_lock<mutex> lock(mMutexFeatures);
-            if(mObservations.count(pKF))
+            if (mObservations.count(pKF))
             {
                 int idx = mObservations[pKF];
-                if(pKF->mvuRight[idx] >= 0)
+                if (pKF->mvuRight[idx] >= 0)
                     nObs -= 2;
                 else
                     nObs--;
 
                 mObservations.erase(pKF);
-		
-		// 增加参考帧机制
-		KeyFrame *pKFrefnew = NULL;
-		for(auto ob : mObservations)
-		{
-		    KeyFrame *pkfi = ob.first;
-		    if(!pkfi->isBad())
-		    {
-			pKFrefnew = pkfi;
-			break;
-		    }    
-		}
+
+                // 增加参考帧机制
+                KeyFrame *pKFrefnew = NULL;
+                for (auto ob : mObservations)
+                {
+                    KeyFrame *pkfi = ob.first;
+                    if (!pkfi->isBad())
+                    {
+                        pKFrefnew = pkfi;
+                        break;
+                    }
+                }
 
                 // 如果该关键帧是参考帧(创建地图点的关键帧)。
-                if(mpRefKF == pKF)
-		{
+                if (mpRefKF == pKF)
+                {
                     mpRefKF = mObservations.begin()->first;
 
-		    if(!pKFrefnew)
-			mpRefKF = pKFrefnew;
-		    else
-			bBad = true;
-		}
+                    if (!pKFrefnew)
+                        mpRefKF = pKFrefnew;
+                    else
+                        bBad = true;
+                }
                 // 如果观测到该点云的相机数少于2，丢弃该点。
-                if(nObs<=2)
+                if (nObs <= 2)
                     bBad = true;
             }
         }
 
-        if(bBad)
+        if (bBad)
             SetBadFlag();
 
     }
@@ -214,7 +207,6 @@ namespace ORB_SLAM2
     }
 
 
-
     // 设置该点为坏点，擦除可以观测到该MapPoint的所有关键帧与该MapPoint的关联关系。
     void MapPoint::SetBadFlag()
     {
@@ -228,7 +220,7 @@ namespace ORB_SLAM2
             mObservations.clear();
         }
 
-        for(mapMapPointObs/*map<KeyFrame*, size_t>*/::iterator mit=obs.begin(), mend=obs.end(); mit!=mend; mit++)
+        for (mapMapPointObs/*map<KeyFrame*, size_t>*/::iterator mit = obs.begin(), mend = obs.end(); mit != mend; mit++)
         {
             KeyFrame *pKF = mit->first;
             // 擦除pKF中索引号为mit->second的MapPoint。
@@ -252,7 +244,7 @@ namespace ORB_SLAM2
     // 形成闭环后，会更新KeyFrame与MapPoint的关系。
     void MapPoint::Replace(MapPoint *pMP)
     {
-        if(pMP->mnId == this->mnId)
+        if (pMP->mnId == this->mnId)
             return;
 
         int nvisible, nfound;
@@ -263,25 +255,26 @@ namespace ORB_SLAM2
             // 临时保存该地图点云与关键帧关联信息。
             obs = mObservations;
             mObservations.clear();
-			mbBad = true;
+            mbBad = true;
             nvisible = mnVisible;
             nfound = mnFound;
             mpReplaced = pMP;
         }
 
         // 更新所有能观测到该MapPoint的KeyFrame的关联。
-        for(mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit=obs.begin(), mend=obs.end(); mit!=mend; mit++)
+        for (mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit = obs.begin(), mend = obs.end();
+             mit != mend; mit++)
         {
             KeyFrame *pKF = mit->first;
 
             // pKF之前没有观测到替换点云。
-            if(!pMP->IsInKeyFrame(pKF))
+            if (!pMP->IsInKeyFrame(pKF))
             {
                 // pKF替换地图点， pMP替换观测。
                 pKF->ReplaceMapPointMatch(mit->second, pMP);
                 pMP->AddObservation(pKF, mit->second);
             }
-            // pKF之前也能观测到需要替换的点云，直接擦除当前点云即可。
+                // pKF之前也能观测到需要替换的点云，直接擦除当前点云即可。
             else
             {
                 pKF->EraseMapPointMatch(mit->second);
@@ -299,7 +292,6 @@ namespace ORB_SLAM2
     }
 
 
-
     // 该MapPoint是否为坏点，true为坏点。
     bool MapPoint::isBad()
     {
@@ -307,7 +299,6 @@ namespace ORB_SLAM2
         unique_lock<mutex> lock2(mMutexPos);
         return mbBad;
     }
-
 
 
     /*
@@ -332,10 +323,9 @@ namespace ORB_SLAM2
     // 获得该地图点 被帧找到数/被帧观测数。
     float MapPoint::GetFoundRatio()
     {
-        unique_lock<mutex> lock(mMutexFeatures); 
-        return static_cast<float>(mnFound)/mnVisible;
+        unique_lock<mutex> lock(mMutexFeatures);
+        return static_cast<float>(mnFound) / mnVisible;
     }
-
 
 
     /*
@@ -351,38 +341,39 @@ namespace ORB_SLAM2
 
         {
             unique_lock<mutex> lock1(mMutexFeatures);
-            if(mbBad)
+            if (mbBad)
                 return;
             observations = mObservations;
         }
 
-        if(observations.empty())
+        if (observations.empty())
             return;
         //分配内存。
         vDescriptors.reserve(observations.size());
 
         // 遍历观测到该MapPoint的所有关键帧，获得ORB描述子，插入到vDescriptors中。
-        for(mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
+        for (mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit = observations.begin(), mend = observations.end();
+             mit != mend; mit++)
         {
             KeyFrame *pKF = mit->first;
 
-            if(!pKF->isBad())
+            if (!pKF->isBad())
                 vDescriptors.push_back(pKF->mDescriptors.row(mit->second));
         }
 
-        if(vDescriptors.empty())
+        if (vDescriptors.empty())
             return;
 
         // 获得描述子的数量。
         const size_t N = vDescriptors.size();
         // 描述子两两之间的距离。
         std::vector<std::vector<float> > Distances;
-        Distances.resize(N, vector<float>(N,0));
-        for(size_t i=0; i<N; i++)
+        Distances.resize(N, vector<float>(N, 0));
+        for (size_t i = 0; i < N; i++)
         {
             // Distances[i][i]是描述子自身的距离。
-            Distances[i][i]=0;
-            for(size_t j=i+1; j<N; j++)
+            Distances[i][i] = 0;
+            for (size_t j = i + 1; j < N; j++)
             {
                 int distij = ORBmatcher::DescriptorDistance(vDescriptors[i], vDescriptors[j]);
                 Distances[i][j] = distij;
@@ -393,17 +384,17 @@ namespace ORB_SLAM2
         // 
         int BestMedian = INT_MAX;
         int BestIdx = 0;
-        for(size_t i=0; i<N; i++)
+        for (size_t i = 0; i < N; i++)
         {
             // 第i个描述子到其他所有描述子的距离。
             vector<int> vDists(Distances[i].begin(), Distances[i].end());
             sort(vDists.begin(), vDists.end());
 
             // 获得中值。
-            int median = vDists[0.5*(N-1)];
+            int median = vDists[0.5 * (N - 1)];
 
             // 获得描述子去其他描述自的最小中值。
-            if(median<BestMedian)
+            if (median < BestMedian)
             {
                 BestMedian = median;
                 BestIdx = i;
@@ -422,7 +413,6 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获取MapPoint的描述子。
     cv::Mat MapPoint::GetDescriptor()
     {
@@ -431,18 +421,16 @@ namespace ORB_SLAM2
     }
 
 
-
     // 获取该MapPoint在关键帧pKF的索引。
     int MapPoint::GetIndexInKeyFrame(KeyFrame *pKF)
     {
         unique_lock<mutex> lock(mMutexFeatures);
-        if(mObservations.count(pKF))
+        if (mObservations.count(pKF))
             return mObservations[pKF];
         else
             return -1;
 
     }
-
 
 
     // 检查MapPoint是否被pKF观测到。
@@ -451,7 +439,6 @@ namespace ORB_SLAM2
         unique_lock<mutex> lock(mMutexFeatures);
         return (mObservations.count(pKF));
     }
-
 
 
     /*
@@ -464,11 +451,11 @@ namespace ORB_SLAM2
     {
         mapMapPointObs/*map<KeyFrame *, size_t>*/ observations;
         KeyFrame *pRefKF;
-        cv::Mat Pos;       
+        cv::Mat Pos;
         {
             unique_lock<mutex> lock1(mMutexFeatures);
             unique_lock<mutex> lock2(mMutexPos);
-            if(mbBad)
+            if (mbBad)
                 return;
 
             // 获取观测到该MapPoint的所有关键帧。
@@ -477,18 +464,19 @@ namespace ORB_SLAM2
             Pos = mWorldPos.clone();
         }
 
-        if(observations.empty())
+        if (observations.empty())
             return;
 
-        cv::Mat normal = cv::Mat::zeros(3,1,CV_32F);
-        int n=0;
-        for(mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
+        cv::Mat normal = cv::Mat::zeros(3, 1, CV_32F);
+        int n = 0;
+        for (mapMapPointObs/*map<KeyFrame *, size_t>*/::iterator mit = observations.begin(), mend = observations.end();
+             mit != mend; mit++)
         {
             KeyFrame *pKF = mit->first;
             cv::Mat Owi = pKF->GetCameraCenter();
             cv::Mat normali = mWorldPos - Owi;
             // 所有观测到该MapPoint的关键帧的观测向量归一化求和。
-            normal = normal + normali/cv::norm(normali);
+            normal = normal + normali / cv::norm(normali);
             n++;
         }
 
@@ -503,31 +491,29 @@ namespace ORB_SLAM2
             unique_lock<mutex> lock3(mMutexPos);
 
             // 观测到该MapPoint的距离上限。
-            mfMaxDistance = dist*levelScaleFactor;
+            mfMaxDistance = dist * levelScaleFactor;
             // 观测到该MapPoint的距离下限。
-            mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1];
+            mfMinDistance = mfMaxDistance / pRefKF->mvScaleFactors[nLevels - 1];
             // 平均观测方向，个人感觉不需要除n。
-            mNormalVector = normal/n;
+            mNormalVector = normal / n;
         }
 
     }
-
 
 
     // 获得该MapPoint最小不变性距离。
     float MapPoint::GetMinDistanceInvariance()
     {
         unique_lock<mutex> lock(mMutexPos);
-        return 0.8f*mfMinDistance;
+        return 0.8f * mfMinDistance;
     }
 
     // 获得该MapPoint最大不变性距离。
     float MapPoint::GetMaxDistanceInvariance()
     {
         unique_lock<mutex> lock(mMutexPos);
-        return 1.2f*mfMaxDistance;
+        return 1.2f * mfMaxDistance;
     }
-
 
 
     //              ____
@@ -546,11 +532,11 @@ namespace ORB_SLAM2
         {
             unique_lock<mutex> lock3(mMutexPos);
             // mfMaxDistance为参考帧考虑尺度后的距离。
-            ratio = mfMaxDistance/currentDist;
+            ratio = mfMaxDistance / currentDist;
         }
 
         // 取log线性化。
-        return ceil(log(ratio)/logScaleFactor);
+        return ceil(log(ratio) / logScaleFactor);
 
     }
 
