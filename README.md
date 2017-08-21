@@ -5,19 +5,19 @@ Add the lib into the SLAM
 Add the data access not used ros framework
 
 build and execute the projecte
-no_ros:
+no_ros
+```
     cd ORB_MC__SLAM/
     sh build.sh
     ./Examples/Monocular/mono_EuRoC_vins Vocabulary/ORBvoc.bin config/euroc.yaml
-
-ros:
-add the ROS_PACKAGE_PATH for VIO
+```
+ros
+```
+    export ROS_PACKAGE_PATH=${ROS_PACKAGE_PATH}:~/ORB_MC_VI/Examples/ROS/
     cd ORB_MC_SLAM/
     sh build_all.sh
     roslaunch VIO testeuroc.launch 
-
-
-*****
+```
 
 An implementation of [Visual Inertial ORBSLAM](https://arxiv.org/abs/1610.05949) based on [ORB-SLAM2](https://github.com/raulmur/ORB_SLAM2)
 
@@ -29,7 +29,7 @@ Below is the primary README of ORBSLAM2.
 
 The rosbag need to be played when real flag is 1
 
-The *****principle of Preintergator reference to 
+The principle of Preintergator reference to
     Forster C, Carlone L, Dellaert F, et al. On-Manifold Preintegration for Real-Time Visual--Inertial Odometry. IEEE Transactions on Robotics, 2017, 33(1): 1-21
 # ORB-SLAM2
 **Authors:** [Raul Mur-Artal](http://webdiis.unizar.es/~raulmur/), [Juan D. Tardos](http://webdiis.unizar.es/~jdtardos/), [J. M. M. Montiel](http://webdiis.unizar.es/~josemari/) and [Dorian Galvez-Lopez](http://doriangalvez.com/) ([DBoW2](https://github.com/dorian3d/DBoW2))
