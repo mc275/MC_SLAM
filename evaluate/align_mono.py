@@ -20,12 +20,11 @@ parser.add_argument('first_file', help='ground truth trajectory (format: timesta
 parser.add_argument('second_file', help='aligen time ground truth trajectory (format: timestamp tx ty tz qx qy qz qw)')
 args = parser.parse_args()
 
+NS = np.loadtxt(args.first_file, delimiter=",");
 
-NS = np.loadtxt(args.first_file, delimiter = ",");
+NS[:, 0] = NS[:, 0] / 1e9;
 
-NS[:,0] = NS[:,0]/1e9;
-
-np.savetxt(args.second_file, NS, delimiter=' ', fmt='%f') 
+np.savetxt(args.second_file, NS, delimiter=' ', fmt='%f')
 
 
 # mono_traj = np.loadtxt(filename2);
@@ -39,6 +38,4 @@ np.savetxt(args.second_file, NS, delimiter=' ', fmt='%f')
 # 	a = xyz[i, 1:4].reshape(3,1);
 # 	align_gt[i,1:4] = np.transpose(np.dot(rot, a)+trans);
 
-# np.savetxt('mono_align.txt', align_gt, delimiter=' ', fmt='%f') 
-
-
+# np.savetxt('mono_align.txt', align_gt, delimiter=' ', fmt='%f')
