@@ -7,14 +7,14 @@ test.VINSInitTime: 15.0
 
 # Modify test.InitVIOTmpPath and bagfile to the correct path
 # Path to save tmp files/results
-test.InitVIOTmpPath: "/home/mc/SLAM/ORB_MC_VI/tmp/"
-#test.InitVIOTmpPath: "/home/mc/My_Code/ORB_MC_VI/tmp/"
+#test.InitVIOTmpPath: "/home/mc/SLAM/ORB_MC_VI/tmp/"
+test.InitVIOTmpPath: "/home/mc/My_Code/ORB_MC_VI/tmp/"
 
 ## For good initialization (no movement at the beginning for some bag)
 test.DiscardTime: 0
-bagfile: "/media/mc/b3061c3b-2f4c-4ecb-b718-d1236f0b521e/VI_DataSets/MH_03_medium/"
+bagfile: "/media/mc/Study/DataSets/EuRoC/MH_03_medium/"
+#bagfile: "/media/mc/b3061c3b-2f4c-4ecb-b718-d1236f0b521e/VI_DataSets/MH_03_medium/"
 #bagfile: "/media/mc/b3061c3b-2f4c-4ecb-b718-d1236f0b521e/VI_DataSets/MH_04_difficult/mav0/"
-#bagfile: "/home/jp/TimeV1_01_easy.bag"
 ## bad: V1_03_difficult(wrong), V2_03_difficult(lost)
 ## not so good(cant close loop without loopclosure): V1_02_medium, V2_02_medium, MH_05_difficult
 ## good: V1_01_easy, V2_01_easy, MH_01_easy, MH_02_easy, MH_03_medium, MH_04_difficult
@@ -22,20 +22,6 @@ bagfile: "/media/mc/b3061c3b-2f4c-4ecb-b718-d1236f0b521e/VI_DataSets/MH_03_mediu
 # range 1-data length
 Seq.startIdx: 5
 Seq.endIdx: 3340
-#test.DiscardTime: 18
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/MH_03_medium.bag"
-#bagfile: "/media/mc/Seagate Backup Plus Drive/MH_03_medium.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/MH_04_difficult.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/MH_05_difficult.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/MH_02_easy.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/MH_01_easy.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/V2_02_medium.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/V2_01_easy.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/V1_02_medium.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/V1_01_easy.bag"
-
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/V1_03_difficult.bag"
-#bagfile: "/media/jp/JingpangPassport/3dataset/EuRoC-VIO/un_restamped/V2_03_difficult.bag"
 
 
 #######################################
