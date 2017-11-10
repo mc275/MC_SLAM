@@ -239,6 +239,8 @@ namespace ORB_SLAM2
         // 全局BA，提高关键帧和地图质量。
         Optimizer::GlobalBundleAdjustment(mpMap, 10);
 
+        double t0 = (double)cv::getTickCount();
+
         // 外参
         cv::Mat Tbc = ConfigParam::GetMatTbc();
         cv::Mat Rbc = Tbc.rowRange(0, 3).colRange(0, 3);
@@ -480,6 +482,7 @@ namespace ORB_SLAM2
         Eigen::Matrix3d Rwieig_ = RWIeig * Sophus::SO3::exp(dthetaeig).matrix();
         cv::Mat Rwi_ = Converter::toCvMat(Rwieig_);
 
+        double t3 = (double)cv::getTickCount();
         // test log
         {
 
@@ -506,8 +509,8 @@ namespace ORB_SLAM2
                      << w2.at<float>(4) << " " << w2.at<float>(5) << " " << endl;
 
 
-//            ftime<<mpCurrentKeyFrame->mTimeStamp<<" "
-//                 <<(t3-t0)/cv::getTickFrequency()*1000<<" "<<endl;
+            ftime<<mpCurrentKeyFrame->mTimeStamp<<" "
+                 <<(t3-t0)/cv::getTickFrequency()*1000<<" "<<endl;
 
             fbiasg << mpCurrentKeyFrame->mTimeStamp << " "
                    << bgest(0) << " " << bgest(1) << " " << bgest(2) << " " << endl;
