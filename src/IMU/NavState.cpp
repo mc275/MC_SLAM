@@ -32,7 +32,7 @@ namespace ORB_SLAM2
     {
         // pi = pi + dpi,    pj = pj + dpj
         // vi = vi + dvi,       vj = vj + dvj
-        // Ri = Ri*Exp(dphi_i), Rj = Rj*Exp(dphi_j)     IMU是坐标系变换,右乘？
+        // Ri = Ri*Exp(dphi_i), Rj = Rj*Exp(dphi_j)     IMU是坐标系变换,右乘.
         // delta_biasg_i = delta_biasg_i + dbgi,    delta_biasg_j = delta_biasg_j + dbgj
         // delta_biasa_i = delta_biasa_i + dbai,    delta_biasa_j = delta_biasa_j + dbaj
 

@@ -102,7 +102,7 @@ namespace ORB_SLAM2
         _J_R_Biasg = dR.transpose() * _J_R_Biasg - Jr * dt;
 
         // 步骤4 计算IMU预积分
-        // 等号右侧表示本次测量量的预积分值
+        // 等号右侧表示本次两帧之间测量的预积分值,右乘更新
         _delta_P += _delta_V * dt + 0.5 * _delta_R * acc * dt2;
         _delta_V += _delta_R * acc * dt;
         _delta_R = normalizeRotationM(_delta_R * dR);

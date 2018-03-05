@@ -176,7 +176,7 @@ namespace ORB_SLAM2
 
     private:
 
-        // IMU测量预积分值PVR，论文的公式35,36,37
+        // IMU关键帧间的预积分值PVR，论文的公式35,36,37
         Eigen::Vector3d _delta_P;    // P_k+1 = P_k + V_k*dt + R_k*a_k*dt*dt/2
         Eigen::Vector3d _delta_V;    // V_k+1 = V_k + R_k*a_k*dt
         Eigen::Matrix3d _delta_R;    // R_k+1 = R_k*exp(w_k*dt). note: Rwc, Rwc'=Rwc*[w_body]x

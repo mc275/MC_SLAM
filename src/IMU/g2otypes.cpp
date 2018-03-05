@@ -66,7 +66,7 @@ namespace g2o
 
     }
 
-    // 本代码中的pose更新为右乘,更新方式要与jacobian形式对应
+    // 根据IMU运动方程,本代码中IMU预积分估计的pose为右乘更新,jacobian形式受到左右乘的影响
     void EdgePRIDP::linearizeOplus()
     {
         const VertexIDP *vIDP = static_cast<const VertexIDP *>(_vertices[0]);

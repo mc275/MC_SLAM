@@ -59,7 +59,7 @@ namespace ORB_SLAM2
 
         void SetNavStateBiasAcc(const Vector3d &ba);
 
-        // IMU预积分的结果
+        // IMU数据缓存
         std::vector<IMUData> mvIMUDataSinceLastFrame;
 
         // 位姿先验信息，用于优化
